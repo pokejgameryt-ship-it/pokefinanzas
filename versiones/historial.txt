@@ -1,0 +1,6 @@
+[28/06/2026] v1: Build web inicial 
+[28/06/2026] v1: Version original antes de mejoras 
+[28/06/2026] v2: Todas las 33 mejoras implementadas - bugs, cleanup, UX, visual, arquitectura, features 
+[28/06/2026] v2: Corregido - bug initialRoute causaba pantalla gris 
+[28/06/2026] v3: Pre-sistema redistribucion + meta activa dashboard 
+[28/06/2026] v3: Meta activa dashboard + sistema redistribucion completo + Cloud Function 
