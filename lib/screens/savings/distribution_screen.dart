@@ -366,7 +366,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
   void _showCategoryRedistributionDialog(int categoryIndex) {
     final dist = _currentDistribution!;
     final cat = dist.categories[categoryIndex];
-    if (cat.isAutomatic) return;
 
     final nameController = TextEditingController(text: cat.name);
     final budgetController = TextEditingController(
@@ -421,58 +420,62 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Editar categoría',
+                  cat.isAutomatic ? 'Redistribuir Ahorro' : 'Editar categoría',
                   style: Theme.of(ctx).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 20),
 
-                // ── Name ──
-                TextField(
-                  controller: nameController,
-                  decoration: const InputDecoration(
-                    labelText: 'Nombre',
-                    border: OutlineInputBorder(),
+                // ── Name (skip for Ahorro) ──
+                if (!cat.isAutomatic) ...[
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(
+                      labelText: 'Nombre',
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 16),
-
-                // ── Budget type & value ──
-                Row(
-                  children: [
-                    const Icon(Icons.account_balance_wallet, size: 20),
-                    const SizedBox(width: 8),
-                    Text('Presupuesto',
-                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro, size: 16)),
-                    ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent, size: 16)),
-                  ],
-                  selected: {isFixed},
-                  onSelectionChanged: (s) => setModalState(() => isFixed = s.first),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: budgetController,
-                  keyboardType: TextInputType.number,
-                  decoration: InputDecoration(
-                    labelText: isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
-                    border: const OutlineInputBorder(),
-                    prefixText: isFixed ? '€ ' : '',
-                    suffixText: isFixed ? '' : '%',
-                  ),
-                ),
-                if (isFixed && dist.monthlyIncome > 0) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    'Ingreso mensual: ${Formatters.formatCurrency(dist.monthlyIncome)}',
-                    style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                  ),
+                  const SizedBox(height: 16),
                 ],
-                const SizedBox(height: 20),
+
+                // ── Budget type & value (skip for Ahorro) ──
+                if (!cat.isAutomatic) ...[
+                  Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet, size: 20),
+                      const SizedBox(width: 8),
+                      Text('Presupuesto',
+                        style: Theme.of(ctx).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro, size: 16)),
+                      ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent, size: 16)),
+                    ],
+                    selected: {isFixed},
+                    onSelectionChanged: (s) => setModalState(() => isFixed = s.first),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: budgetController,
+                    keyboardType: TextInputType.number,
+                    decoration: InputDecoration(
+                      labelText: isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
+                      border: const OutlineInputBorder(),
+                      prefixText: isFixed ? '€ ' : '',
+                      suffixText: isFixed ? '' : '%',
+                    ),
+                  ),
+                  if (isFixed && dist.monthlyIncome > 0) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Ingreso mensual: ${Formatters.formatCurrency(dist.monthlyIncome)}',
+                      style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                ],
 
                 // ── Redistribution ──
                 Row(
