@@ -89,8 +89,10 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       _redistributionConfigs = await _db.getRedistributionConfigs();
       _redistributionPresets = await _db.getRedistributionPresets();
 
-      // Get THIS MONTH's income only
-      final thisMonthIncome = await _db.getTotalIncomeByMonth(month, year);
+      // Current balance = all income - all expenses (the money we have NOW)
+      final totalIncome = await _db.getTotalIncomeAll();
+      final totalExpenses = await _db.getTotalExpensesAll();
+      final currentBalance = totalIncome - totalExpenses;
 
       SavingsDistribution? dist;
       try {
@@ -100,12 +102,11 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       }
 
       if (dist == null) {
-        // Create fresh distribution for this month
         dist = SavingsDistribution(
           id: const Uuid().v4(),
           month: month,
           year: year,
-          monthlyIncome: thisMonthIncome,
+          monthlyIncome: currentBalance,
           categories: [
             DistributionCategory(
               name: 'Ahorro',
@@ -116,12 +117,12 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         );
         await _db.insertDistribution(dist);
       } else {
-        // Reset: update income to this month's actual, clear spentAmount
+        // Reset: current balance as income, spent=0, no redistribution
         final resetCategories = dist.categories.map((cat) =>
           cat.copyWith(spentAmount: 0, totalRedistributionReceived: 0)
         ).toList();
         dist = dist.copyWith(
-          monthlyIncome: thisMonthIncome,
+          monthlyIncome: currentBalance,
           categories: resetCategories,
         );
         await _db.insertDistribution(dist);
@@ -138,7 +139,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = dist.copyWith(categories: cats);
       }
 
-      // No redistribution from previous month — fresh start
       final Map<String, double> redistributionReceived = {};
 
       if (mounted) {
