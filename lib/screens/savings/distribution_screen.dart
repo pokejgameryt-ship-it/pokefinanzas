@@ -6,6 +6,7 @@ import '../../models/savings_distribution.dart';
 import '../../models/redistribution_config.dart';
 import '../../models/redistribution_preset.dart';
 import '../../services/database_service.dart';
+import '../../services/redistribution_notifier.dart';
 import '../../utils/formatters.dart';
 import '../../validators/distribution_validator.dart';
 import 'presets_screen.dart';
@@ -17,7 +18,7 @@ class DistributionScreen extends StatefulWidget {
   State<DistributionScreen> createState() => _DistributionScreenState();
 }
 
-class _DistributionScreenState extends State<DistributionScreen> {
+class _DistributionScreenState extends State<DistributionScreen> with WidgetsBindingObserver {
   final _db = DatabaseService.instance;
   SavingsDistribution? _currentDistribution;
   DateTime _selectedMonth = DateTime.now();
@@ -34,8 +35,28 @@ class _DistributionScreenState extends State<DistributionScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    RedistributionNotifier.instance.redistributionChanged.addListener(_onRedistributionChanged);
     _loadPrefs();
     _loadData();
+  }
+
+  @override
+  void dispose() {
+    RedistributionNotifier.instance.redistributionChanged.removeListener(_onRedistributionChanged);
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  void _onRedistributionChanged() {
+    _loadData();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _loadData();
+    }
   }
 
   Future<void> _loadPrefs() async {
@@ -978,19 +999,8 @@ class _DistributionScreenState extends State<DistributionScreen> {
                     if (mounted) setState(() => _globalRedistributionDay = tempDay);
                     if (ctx.mounted) Navigator.pop(ctx);
 
-                    if (mounted) {
-                      final updatedDist = await _db.getDistribution(now.month, now.year);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(
-                            'Día $tempDay. '
-                            'Ingresos 30d: ${Formatters.formatCurrency(last30DaysIncome)}, '
-                            'Gastado: ${Formatters.formatCurrency(updatedDist?.totalSpent ?? 0)}',
-                          ),
-                          duration: const Duration(seconds: 4),
-                        ),
-                      );
-                    }
+                    // Reload distribution to show updated spent amounts
+                    if (mounted) _loadData();
                   },
                   child: const Text('Guardar y recalcular'),
                 ),

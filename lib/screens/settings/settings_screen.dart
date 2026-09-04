@@ -7,6 +7,7 @@ import '../../models/currency_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/database_service.dart';
+import '../../services/redistribution_notifier.dart';
 import '../../services/update_service.dart';
 import '../../services/url_opener.dart';
 import '../../utils/formatters.dart';
@@ -306,6 +307,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       // Recalculate spent amounts from actual expenses (last 30 days)
       await db.recalculateDistributionSpent(from: thirtyDaysAgo, to: now);
+
+      // Notify distribution screen to reload
+      RedistributionNotifier.instance.notify();
 
       // Reload distribution to get updated values
       final updatedDist = await db.getDistribution(now.month, now.year);
