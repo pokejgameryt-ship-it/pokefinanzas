@@ -294,26 +294,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save the new day
       await db.setGlobalRedistributionDay(result);
 
-      // Calculate period based on redistribution day
+      // Get total income and total expenses (all time)
+      final totalIncome = await db.getTotalIncomeAll();
       final now = DateTime.now();
       final month = now.month;
       final year = now.year;
-      final prevMonth = month == 1 ? 12 : month - 1;
-      final prevYear = month == 1 ? year - 1 : year;
-      final periodStart = DateTime(prevYear, prevMonth, result);
-      final periodEnd = DateTime(month, year, result > 1 ? result - 1 : 1);
 
-      // Recalculate income from redistribution period
-      final periodIncome = await db.getIncomesByDateRange(periodStart, periodEnd);
-
-      // Update monthly income
+      // Update distribution with total income
       final currentDist = await db.getDistribution(month, year);
-      if (currentDist != null && periodIncome > 0) {
-        await db.insertDistribution(currentDist.copyWith(monthlyIncome: periodIncome));
+      if (currentDist != null && totalIncome > 0) {
+        await db.insertDistribution(currentDist.copyWith(monthlyIncome: totalIncome));
       }
 
-      // Recalculate spent amounts from actual expenses (redistribution period)
-      await db.recalculateDistributionSpent(from: periodStart, to: periodEnd);
+      // Recalculate spent amounts from all expenses
+      await db.recalculateDistributionSpent();
 
       // Notify distribution screen to reload
       RedistributionNotifier.instance.notify();
@@ -330,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               'Día $result. '
-              'Ingresos: ${Formatters.formatCurrency(periodIncome)}, '
+              'Ingresos: ${Formatters.formatCurrency(totalIncome)}, '
               'Gastado: ${Formatters.formatCurrency(totalSpent)}',
             ),
             duration: const Duration(seconds: 4),

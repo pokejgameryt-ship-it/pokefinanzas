@@ -33,6 +33,8 @@ abstract class DatabaseServiceInterface {
   Future<void> insertExpense(Expense expense);
   Future<List<Expense>> getExpensesByMonth(int month, int year);
   Future<List<Expense>> getAllExpenses();
+  Future<double> getTotalIncomeAll();
+  Future<double> getTotalExpensesAll();
   Future<List<Expense>> getExpensesByDate(DateTime date);
   Future<double> getTotalExpensesByMonth(int month, int year);
   Future<double> getExpensesByDateRange(DateTime from, DateTime to);

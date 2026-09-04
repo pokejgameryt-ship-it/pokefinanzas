@@ -102,6 +102,25 @@ class DatabaseService implements DatabaseServiceInterface {
     return List<DailyIncome>.from(_incomes)..sort((a, b) => b.date.compareTo(a.date));
   }
 
+  Future<double> getTotalIncomeAll() async {
+    double total = 0;
+    for (final i in _incomes) {
+      if (i.type == 'cajero') continue;
+      total += i.totalAmount;
+    }
+    return total;
+  }
+
+  Future<double> getTotalExpensesAll() async {
+    double total = 0;
+    for (final e in _expenses) {
+      if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
+      total += e.amount;
+    }
+    return total;
+  }
+
   @override
   Future<List<DailyIncome>> getIncomesByDate(DateTime date) async {
     return _incomes.where((i) =>
@@ -917,18 +936,12 @@ class DatabaseService implements DatabaseServiceInterface {
     var dist = await getDistribution(month, year);
     if (dist == null) return;
 
-    // Get expenses using redistribution-day-based period
+    // Get expenses — use all expenses by default
     List<Expense> expenses;
     if (from != null && to != null) {
       expenses = await getExpenseListByDateRange(from, to);
     } else {
-      // Default: use redistribution-day-based period
-      final redistribDay = await getGlobalRedistributionDay();
-      final prevMonth = month == 1 ? 12 : month - 1;
-      final prevYear = month == 1 ? year - 1 : year;
-      final periodStart = DateTime(prevYear, prevMonth, redistribDay);
-      final periodEnd = DateTime(month, year, redistribDay > 1 ? redistribDay - 1 : 1);
-      expenses = await getExpenseListByDateRange(periodStart, periodEnd);
+      expenses = await getAllExpenses();
     }
 
     // Recalculate per-category spent

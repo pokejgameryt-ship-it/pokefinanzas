@@ -83,18 +83,15 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       final month = _selectedMonth.month;
       final year = _selectedMonth.year;
 
-      // Load redistribution day to determine the correct period
+      // Load redistribution settings
       _globalRedistributionDay = await _db.getGlobalRedistributionDay();
       _redistributionEnabled = await _db.getRedistributionEnabled();
-      final redistribDay = _globalRedistributionDay;
+      _redistributionConfigs = await _db.getRedistributionConfigs();
+      _redistributionPresets = await _db.getRedistributionPresets();
 
-      // Calculate period boundaries based on redistribution day
-      // Period = redistribDay of previous month → (redistribDay - 1) of current month
-      final now = DateTime.now();
-      final prevMonth = month == 1 ? 12 : month - 1;
-      final prevYear = month == 1 ? year - 1 : year;
-      final periodStart = DateTime(prevYear, prevMonth, redistribDay);
-      final periodEnd = DateTime(month, year, redistribDay > 1 ? redistribDay - 1 : 1);
+      // Get total income and total expenses (all time)
+      final totalIncome = await _db.getTotalIncomeAll();
+      final allExpenses = await _db.getAllExpenses();
 
       SavingsDistribution? dist;
       try {
@@ -103,105 +100,26 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = null;
       }
 
-      // If in-memory data exists for this month, keep it
-      if (dist == null && _currentDistribution != null &&
-          _currentDistribution!.month == month && _currentDistribution!.year == year) {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-          });
-        }
-        return;
-      }
-
-      // Sync monthlyIncome with actual income from redistribution period
-      if (dist != null) {
-        final actualIncome = await _db.getIncomesByDateRange(periodStart, periodEnd);
-        if (actualIncome > 0 && dist.monthlyIncome != actualIncome) {
-          dist = dist.copyWith(monthlyIncome: actualIncome);
-          await _db.insertDistribution(dist);
-        }
-      }
-
-      // Calculate redistribution from previous month
-      double prevRedistribution = 0;
-      try {
-        prevRedistribution = await _db.calculateRedistributionForMonth(month, year);
-      } catch (_) {}
-
-      // If still null, try to copy from previous month
+      // Create or update distribution with total income
       if (dist == null) {
-        final prevMonth = month == 1 ? 12 : month - 1;
-        final prevYear = month == 1 ? year - 1 : year;
-        SavingsDistribution? prevDist;
-        try {
-          prevDist = await _db.getDistribution(prevMonth, prevYear);
-        } catch (_) {}
-
-        if (prevDist != null) {
-          // Use actual total income from previous month as the budget
-          final actualPrevIncome = await _db.getTotalIncomeByMonth(prevMonth, prevYear);
-          // Copy categories from previous month
-          final newCategories = prevDist.userCategories.map((cat) => DistributionCategory(
-            name: cat.name,
-            fixedAmount: cat.fixedAmount,
-            percentage: cat.percentage,
-            isFixed: cat.isFixed,
-            spentAmount: 0,
-            isAutomatic: false,
-            isEnabled: cat.isEnabled,
-            redistributionPercentages: cat.redistributionPercentages,
-          )).toList();
-          newCategories.add(DistributionCategory(
-            name: 'Ahorro',
-            isFixed: true,
-            isAutomatic: true,
-          ));
-          dist = SavingsDistribution(
-            id: const Uuid().v4(),
-            month: month,
-            year: year,
-            monthlyIncome: actualPrevIncome > 0 ? actualPrevIncome : 0,
-            categories: newCategories,
-          );
-          // Persist the new distribution
-          await _db.insertDistribution(dist);
-        } else {
-          // No previous month distribution record — still check actual income
-          final actualPrevIncome = await _db.getTotalIncomeByMonth(prevMonth, prevYear);
-          if (actualPrevIncome > 0) {
-            // Create from previous month's actual income with default categories
-            dist = SavingsDistribution(
-              id: const Uuid().v4(),
-              month: month,
-              year: year,
-              monthlyIncome: actualPrevIncome,
-              categories: [
-                DistributionCategory(
-                  name: 'Ahorro',
-                  isFixed: true,
-                  isAutomatic: true,
-                ),
-              ],
-            );
-            await _db.insertDistribution(dist);
-          } else {
-            // No previous month data — create empty placeholder
-            dist = SavingsDistribution(
-              id: const Uuid().v4(),
-              month: month,
-              year: year,
-              monthlyIncome: 0,
-              categories: [
-                DistributionCategory(
-                  name: 'Ahorro',
-                  isFixed: true,
-                  isAutomatic: true,
-                ),
-              ],
-            );
-          }
-        }
+        // No distribution for this month — create one with total income
+        dist = SavingsDistribution(
+          id: const Uuid().v4(),
+          month: month,
+          year: year,
+          monthlyIncome: totalIncome,
+          categories: [
+            DistributionCategory(
+              name: 'Ahorro',
+              isFixed: true,
+              isAutomatic: true,
+            ),
+          ],
+        );
+        await _db.insertDistribution(dist);
+      } else if (dist.monthlyIncome != totalIncome) {
+        dist = dist.copyWith(monthlyIncome: totalIncome);
+        await _db.insertDistribution(dist);
       }
 
       // Ensure Ahorro category exists
@@ -215,15 +133,9 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = dist.copyWith(categories: cats);
       }
 
-      // Calculate spent amounts from actual expenses using redistribution period
-      List<Expense> expenses = [];
-      try {
-        expenses = await _db.getExpenseListByDateRange(periodStart, periodEnd);
-      } catch (_) {}
-
-      // Calculate actual transfers to savings
+      // Calculate spent amounts from ALL expenses
       double transfersToSavings = 0;
-      for (final expense in expenses) {
+      for (final expense in allExpenses) {
         if (expense.isTransfer && expense.transferTo == 'Ahorro') {
           transfersToSavings += expense.amount;
         }
@@ -234,7 +146,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           return cat.copyWith(spentAmount: transfersToSavings);
         }
         double spent = 0;
-        for (final expense in expenses) {
+        for (final expense in allExpenses) {
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
           if (expense.category == cat.name ||
@@ -247,19 +159,18 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       final updatedDist = dist.copyWith(categories: updatedCategories);
 
-      // Persist recalculated spentAmount so redistribution engine uses correct values
+      // Persist recalculated spentAmount
       await _db.updateDistribution(updatedDist);
 
-      // Load redistribution settings
-      _redistributionConfigs = await _db.getRedistributionConfigs();
-      _redistributionPresets = await _db.getRedistributionPresets();
-
       // Calculate redistribution received by each category from previous month
-      // Use saved totalRedistributionReceived if available (already applied by autoRedistributeIfNeeded)
-      // Otherwise recalculate from previous month's actual unspent
+      double prevRedistribution = 0;
+      try {
+        prevRedistribution = await _db.calculateRedistributionForMonth(month, year);
+      } catch (_) {}
+
       final Map<String, double> redistributionReceived = {};
       
-      // First check if redistribution was already applied (totalRedistributionReceived > 0)
+      // First check if redistribution was already applied
       bool hasAppliedRedistribution = false;
       for (final cat in updatedDist.userCategories) {
         if (cat.totalRedistributionReceived > 0) {
@@ -268,7 +179,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         }
       }
       
-      // If no redistribution was applied yet, calculate expected redistribution from previous month
+      // If no redistribution was applied yet, calculate expected from previous month
       if (!hasAppliedRedistribution && _redistributionEnabled) {
         SavingsDistribution? prevDist;
         try {
@@ -277,9 +188,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           prevDist = await _db.getDistribution(prevMonth, prevYear);
         } catch (_) {}
         if (prevDist != null) {
-          // Get actual income for consistency with autoRedistributeIfNeeded
-          final actualPrevIncome = await _db.getTotalIncomeByMonth(month == 1 ? 12 : month - 1, month == 1 ? year - 1 : year);
-          final income = actualPrevIncome > 0 ? actualPrevIncome : prevDist.monthlyIncome;
+          final income = totalIncome > 0 ? totalIncome : prevDist.monthlyIncome;
           
           final Map<String, double> redistributionByTarget = {};
           for (final sourceCat in prevDist.categories) {
@@ -298,7 +207,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   (redistributionByTarget[entry.key] ?? 0) + unspent * entry.value / 100;
             }
           }
-          // Cap at net savings (same logic as autoRedistributeIfNeeded)
+          // Cap at net savings
           final netSavings = income - prevDist.totalSpent;
           double totalRedistributed = redistributionByTarget.values.fold(0.0, (a, b) => a + b);
           if (totalRedistributed > netSavings && netSavings > 0) {
@@ -990,26 +899,17 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   onPressed: () async {
                     await _db.setGlobalRedistributionDay(tempDay);
 
-                    // Calculate period based on redistribution day
-                    final now = DateTime.now();
-                    final month = now.month;
-                    final year = now.year;
-                    final prevMonth = month == 1 ? 12 : month - 1;
-                    final prevYear = month == 1 ? year - 1 : year;
-                    final periodStart = DateTime(prevYear, prevMonth, tempDay);
-                    final periodEnd = DateTime(month, year, tempDay > 1 ? tempDay - 1 : 1);
-
-                    // Recalculate income from redistribution period
-                    final periodIncome = await _db.getIncomesByDateRange(periodStart, periodEnd);
+                    // Get total income and total expenses (all time)
+                    final totalIncome = await _db.getTotalIncomeAll();
 
                     // Update monthly income
-                    if (_currentDistribution != null && periodIncome > 0) {
+                    if (_currentDistribution != null && totalIncome > 0) {
                       await _db.insertDistribution(
-                        _currentDistribution!.copyWith(monthlyIncome: periodIncome));
+                        _currentDistribution!.copyWith(monthlyIncome: totalIncome));
                     }
 
-                    // Recalculate spent amounts from actual expenses (redistribution period)
-                    await _db.recalculateDistributionSpent(from: periodStart, to: periodEnd);
+                    // Recalculate spent amounts from all expenses
+                    await _db.recalculateDistributionSpent();
 
                     if (mounted) setState(() => _globalRedistributionDay = tempDay);
                     if (ctx.mounted) Navigator.pop(ctx);
