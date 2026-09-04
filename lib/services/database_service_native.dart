@@ -907,6 +907,51 @@ class DatabaseService implements DatabaseServiceInterface {
     }
   }
 
+  /// Recalculate spentAmount for current distribution from actual expenses.
+  /// Can be called with a custom date range (last 30 days) or defaults to current month.
+  Future<void> recalculateDistributionSpent({DateTime? from, DateTime? to}) async {
+    final now = DateTime.now();
+    final month = now.month;
+    final year = now.year;
+
+    var dist = await getDistribution(month, year);
+    if (dist == null) return;
+
+    // Get expenses
+    List<Expense> expenses;
+    if (from != null && to != null) {
+      expenses = await getExpenseListByDateRange(from, to);
+    } else {
+      expenses = await getExpensesByMonth(month, year);
+    }
+
+    // Recalculate per-category spent
+    final updatedCategories = dist.categories.map((cat) {
+      if (cat.isAutomatic) {
+        double transfers = 0;
+        for (final exp in expenses) {
+          if (exp.isTransfer && exp.transferTo == 'Ahorro') {
+            transfers += exp.amount;
+          }
+        }
+        return cat.copyWith(spentAmount: transfers);
+      }
+      double spent = 0;
+      for (final exp in expenses) {
+        if (exp.isTransfer) continue;
+        if (exp.category == 'Cajero') continue;
+        if (exp.category == cat.name ||
+            (exp.isRecurring && exp.recurringName == cat.name)) {
+          spent += exp.amount;
+        }
+      }
+      return cat.copyWith(spentAmount: spent);
+    }).toList();
+
+    final updatedDist = dist.copyWith(categories: updatedCategories);
+    await insertDistribution(updatedDist);
+  }
+
   Future<void> autoRedistributeIfNeeded() async {
     final now = DateTime.now();
     final today = now.day;

@@ -280,7 +280,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
     );
 
-    if (result != null && result != currentDay) {
+    if (result != null) {
       // Show loading
       if (mounted) {
         showDialog(
@@ -293,42 +293,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save the new day
       await db.setGlobalRedistributionDay(result);
 
-      // Recalculate income AND expenses from last 30 days
+      // Recalculate income from last 30 days
       final now = DateTime.now();
       final thirtyDaysAgo = now.subtract(const Duration(days: 30));
       final last30DaysIncome = await db.getIncomesByDateRange(thirtyDaysAgo, now);
-      final last30DaysExpenses = await db.getExpenseListByDateRange(thirtyDaysAgo, now);
 
-      // Get current distribution
+      // Update monthly income
       final currentDist = await db.getDistribution(now.month, now.year);
-      if (currentDist != null) {
-        // Calculate per-category spent from last 30 days
-        final updatedCategories = currentDist.categories.map((cat) {
-          if (cat.isAutomatic) {
-            double transfers = 0;
-            for (final exp in last30DaysExpenses) {
-              if (exp.isTransfer && exp.transferTo == 'Ahorro') {
-                transfers += exp.amount;
-              }
-            }
-            return cat.copyWith(spentAmount: transfers);
-          }
-          double spent = 0;
-          for (final exp in last30DaysExpenses) {
-            if (exp.category == cat.name ||
-                (exp.isRecurring && exp.recurringName == cat.name)) {
-              spent += exp.amount;
-            }
-          }
-          return cat.copyWith(spentAmount: spent);
-        }).toList();
-
-        final updatedDist = currentDist.copyWith(
-          monthlyIncome: last30DaysIncome > 0 ? last30DaysIncome : currentDist.monthlyIncome,
-          categories: updatedCategories,
-        );
-        await db.insertDistribution(updatedDist);
+      if (currentDist != null && last30DaysIncome > 0) {
+        await db.insertDistribution(currentDist.copyWith(monthlyIncome: last30DaysIncome));
       }
+
+      // Recalculate spent amounts from actual expenses (last 30 days)
+      await db.recalculateDistributionSpent(from: thirtyDaysAgo, to: now);
+
+      // Reload distribution to get updated values
+      final updatedDist = await db.getDistribution(now.month, now.year);
+      final totalSpent = updatedDist?.totalSpent ?? 0;
 
       // Close loading
       if (mounted) Navigator.pop(context);
@@ -339,7 +320,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             content: Text(
               'Día $result. '
               'Ingresos 30d: ${Formatters.formatCurrency(last30DaysIncome)}, '
-              'Gastos 30d: ${Formatters.formatCurrency(last30DaysExpenses.fold(0.0, (s, e) => s + e.amount))}',
+              'Gastado: ${Formatters.formatCurrency(totalSpent)}',
             ),
             duration: const Duration(seconds: 4),
           ),
