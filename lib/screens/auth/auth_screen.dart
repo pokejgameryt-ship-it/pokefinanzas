@@ -55,6 +55,56 @@ class _AuthScreenState extends State<AuthScreen> {
     }
   }
 
+  Future<void> _resetPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@') || !email.contains('.')) {
+      setState(() {
+        _errorMessage = 'Introduce tu email para restablecer la contraseña';
+      });
+      return;
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Restablecer contraseña'),
+        content: Text(
+            'Se enviara un enlace de restablecimiento a:\n\n$email\n\n¿Es correcto?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    setState(() => _isLoading = true);
+    final result = await AuthService.sendPasswordResetEmail(email);
+
+    if (!mounted) return;
+
+    setState(() => _isLoading = false);
+
+    if (result.isSuccess) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Enlace enviado a $email'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else {
+      setState(() => _errorMessage = result.errorMessage);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
@@ -157,6 +207,16 @@ class _AuthScreenState extends State<AuthScreen> {
                   ),
                   const SizedBox(height: 16),
                 ],
+
+                // Forgot password (login only)
+                if (_isLogin)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: _isLoading ? null : _resetPassword,
+                      child: const Text('¿Olvidaste la contraseña?'),
+                    ),
+                  ),
 
                 // Error message
                 if (_errorMessage != null) ...[

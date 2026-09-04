@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -6,6 +7,8 @@ import '../../models/currency_config.dart';
 import '../../services/auth_service.dart';
 import '../../services/cache_service.dart';
 import '../../services/database_service.dart';
+import '../../services/update_service.dart';
+import '../../services/url_opener.dart';
 import '../../utils/formatters.dart';
 import '../reports/export_summary_screen.dart';
 import '../savings/recurring_screen.dart';
@@ -61,6 +64,217 @@ class _SettingsScreenState extends State<SettingsScreen> {
       setState(() {
         _lastSyncTime = lastSync ?? 'Nunca';
       });
+    }
+  }
+
+  Future<void> _checkForUpdates(BuildContext context) async {
+    try {
+      final hasUpdate = await UpdateService.isNewVersionAvailable();
+      if (!mounted) return;
+      if (hasUpdate) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Nueva version disponible. Actualiza la app.'),
+            duration: Duration(seconds: 3),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Tienes la ultima version.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('No se pudo comprobar actualizaciones'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    }
+  }
+
+  void _reinstallShortcut(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.refresh, size: 48, color: Colors.teal),
+        title: const Text('Reinstalar acceso directo'),
+        content: const Text(
+          'Esto eliminara el acceso directo actual y te permitira '
+          'crear uno nuevo desde el navegador.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _showReinstallSteps(context);
+            },
+            child: const Text('Continuar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showReinstallSteps(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pasos para reinstalar'),
+        content: const Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('1. Elimina el acceso directo actual del inicio'),
+            SizedBox(height: 8),
+            Text('2. Abre la app en Chrome'),
+            SizedBox(height: 8),
+            Text('3. Pulsa los 3 puntos > Instalar app'),
+            SizedBox(height: 8),
+            Text('4. Confirma la instalacion'),
+          ],
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              UrlOpener.open('https://pokefinanzas.web.app');
+            },
+            child: const Text('Abrir en navegador'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDownloadDialog(BuildContext context) {
+    final apkUrl = 'https://github.com/pokejgameryt-ship-it/pokefinanzas/releases/download/v$_version/app-release.apk';
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.android, size: 48, color: Color(0xFF3DDC84)),
+        title: const Text('Descargar APK'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Descarga la versión más reciente de PokeFinanzas para Android.',
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.tag, size: 16),
+                  const SizedBox(width: 8),
+                  Text('v$_version'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Si es la primera vez, activa "Fuentes desconocidas" en la configuración de tu dispositivo.',
+              style: TextStyle(fontSize: 12),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              UrlOpener.open(apkUrl);
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.download),
+            label: const Text('Descargar'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showRedistributionDayDialog() async {
+    final db = DatabaseService.instance;
+    int currentDay = await db.getGlobalRedistributionDay();
+    int tempDay = currentDay;
+
+    final result = await showDialog<int>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('Día de redistribución'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'El día del mes en que se redistribuye el sobrante de cada categoría.',
+                style: TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today, size: 20),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Slider(
+                      value: tempDay.toDouble(),
+                      min: 1,
+                      max: 28,
+                      divisions: 27,
+                      label: 'Día $tempDay',
+                      onChanged: (v) => setDialogState(() => tempDay = v.round()),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 50,
+                    child: Text(
+                      'Día $tempDay',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, tempDay),
+              child: const Text('Guardar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (result != null && result != currentDay) {
+      await db.setGlobalRedistributionDay(result);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Redistribución configurada para el día $result')),
+        );
+      }
     }
   }
 
@@ -205,6 +419,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+          ListTile(
+            leading: const Icon(Icons.calendar_today, color: Colors.orange),
+            title: const Text('Día de redistribución'),
+            subtitle: const Text('Día del mes en que se redistribuye el sobrante'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: _showRedistributionDayDialog,
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),
@@ -312,6 +533,50 @@ class _SettingsScreenState extends State<SettingsScreen> {
             leading: const Icon(Icons.info_outline),
             title: const Text('Versión'),
             subtitle: Text('$_version (build $_buildNumber)'),
+          ),
+
+          const Divider(),
+
+          // ── Aplicación ──
+          _SectionHeader(title: 'Aplicación'),
+          ListTile(
+            leading: const Icon(Icons.system_update, color: Colors.orange),
+            title: const Text('Buscar actualizaciones'),
+            subtitle: const Text('Comprueba si hay nueva version'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _checkForUpdates(context),
+          ),
+          if (kIsWeb) ...[
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.refresh, color: Colors.teal),
+              title: const Text('Reinstalar acceso directo'),
+              subtitle: const Text('Soluciona problemas de acceso directo'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => _reinstallShortcut(context),
+            ),
+          ],
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.android, color: Color(0xFF3DDC84)),
+            title: const Text('Descargar APK Android'),
+            subtitle: const Text('Instala la app en tu dispositivo'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _showDownloadDialog(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.language, color: Colors.blue),
+            title: const Text('Abrir versión web'),
+            subtitle: const Text('Abre la app en el navegador'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => UrlOpener.open('https://pokefinanzas.web.app'),
+          ),
+          ListTile(
+            leading: Icon(Icons.code, color: Colors.grey[600]),
+            title: const Text('Código fuente'),
+            subtitle: const Text('GitHub'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => UrlOpener.open('https://github.com/pokejgameryt-ship-it/pokefinanzas'),
           ),
         ],
       ),

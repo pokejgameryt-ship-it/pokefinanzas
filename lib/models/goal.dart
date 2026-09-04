@@ -15,11 +15,19 @@ class PaymentRecord {
     'note': note,
   };
 
-  factory PaymentRecord.fromMap(Map<String, dynamic> map) => PaymentRecord(
-    date: DateTime.parse(map['date']),
-    amount: (map['amount'] as num).toDouble(),
-    note: map['note'],
-  );
+  factory PaymentRecord.fromMap(Map<String, dynamic> map) {
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(map['date']?.toString() ?? '');
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
+    return PaymentRecord(
+      date: parsedDate,
+      amount: (map['amount'] as num?)?.toDouble() ?? 0,
+      note: map['note']?.toString(),
+    );
+  }
 }
 
 class Goal {
@@ -120,24 +128,50 @@ class Goal {
   }
 
   factory Goal.fromMap(Map<String, dynamic> map) {
+    DateTime parsedCreated;
+    try {
+      parsedCreated = DateTime.parse(map['createdAt']?.toString() ?? '');
+    } catch (_) {
+      parsedCreated = DateTime.now();
+    }
+    DateTime? parsedDeadline;
+    if (map['deadline'] != null) {
+      try {
+        parsedDeadline = DateTime.parse(map['deadline'].toString());
+      } catch (_) {}
+    }
+    DateTime? parsedFirstPayment;
+    if (map['firstPaymentDate'] != null) {
+      try {
+        parsedFirstPayment = DateTime.parse(map['firstPaymentDate'].toString());
+      } catch (_) {}
+    }
+    final productIdsStr = map['productIds']?.toString() ?? '';
+    final productIds = productIdsStr.isEmpty ? <String>[] : productIdsStr.split(',');
+    final List<PaymentRecord> history = [];
+    if (map['paymentHistory'] is List) {
+      for (final p in map['paymentHistory']) {
+        try {
+          history.add(PaymentRecord.fromMap(Map<String, dynamic>.from(p)));
+        } catch (_) {}
+      }
+    }
     return Goal(
-      id: map['id'],
-      name: map['name'],
-      productIds: (map['productIds'] as String).split(','),
-      targetAmount: (map['targetAmount'] as num).toDouble(),
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      productIds: productIds,
+      targetAmount: (map['targetAmount'] as num?)?.toDouble() ?? 0,
       savedAmount: (map['savedAmount'] as num?)?.toDouble() ?? 0.0,
-      isActive: map['isActive'] == 1,
-      deadline: map['deadline'] != null ? DateTime.parse(map['deadline']) : null,
-      createdAt: DateTime.parse(map['createdAt']),
-      hasFixedPayment: map['hasFixedPayment'] == 1,
-      paymentFrequency: map['paymentFrequency'],
+      isActive: map['isActive'] == 1 || map['isActive'] == true,
+      deadline: parsedDeadline,
+      createdAt: parsedCreated,
+      hasFixedPayment: map['hasFixedPayment'] == 1 || map['hasFixedPayment'] == true,
+      paymentFrequency: map['paymentFrequency']?.toString(),
       paymentAmount: (map['paymentAmount'] as num?)?.toDouble(),
       totalPayments: map['totalPayments'] as int?,
       completedPayments: map['completedPayments'] as int? ?? 0,
-      firstPaymentDate: map['firstPaymentDate'] != null ? DateTime.parse(map['firstPaymentDate']) : null,
-      paymentHistory: (map['paymentHistory'] as List?)
-          ?.map((p) => PaymentRecord.fromMap(Map<String, dynamic>.from(p)))
-          .toList() ?? [],
+      firstPaymentDate: parsedFirstPayment,
+      paymentHistory: history,
     );
   }
 

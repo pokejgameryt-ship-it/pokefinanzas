@@ -20,7 +20,7 @@ import '../../widgets/type_chip.dart';
 import '../../widgets/shimmer_loading.dart';
 import '../calendar/unified_calendar_screen.dart';
 
-enum MovementType { ingreso, gasto }
+enum MovementType { ingreso, gasto, cajero }
 
 class MovimientosScreen extends StatefulWidget {
   const MovimientosScreen({super.key});
@@ -76,6 +76,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
 
       double summaryIncome = 0;
       for (final i in incomes) {
+        if (i.type == 'cajero') continue;
         if (periodDates != null) {
           if (i.date.isBefore(periodDates.$1) || i.date.isAfter(periodDates.$2)) continue;
         }
@@ -84,6 +85,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       double summaryExpense = 0;
       for (final e in expenses) {
         if (e.isTransfer) continue;
+        if (e.category == 'Cajero') continue;
         if (periodDates != null) {
           if (e.date.isBefore(periodDates.$1) || e.date.isAfter(periodDates.$2)) continue;
         }
@@ -108,6 +110,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       final List<UnifiedMovement> all = [];
 
       for (final inc in incomes) {
+        if (inc.isCashTransfer) continue;
         String label;
         if (inc.isRecurring) {
           label = inc.recurringName ?? _getIncomeTypeLabel(inc.type);
@@ -130,6 +133,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       }
 
       for (final exp in expenses) {
+        if (exp.isCashTransfer) continue;
         final subLabel = exp.subcategory.isNotEmpty ? ' › ${exp.subcategory}' : '';
         all.add(UnifiedMovement(
           id: exp.id,
@@ -144,7 +148,11 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
         ));
       }
 
-      all.sort((a, b) => b.date.compareTo(a.date));
+      all.sort((a, b) {
+        final cmp = b.date.compareTo(a.date);
+        if (cmp != 0) return cmp;
+        return b.id.compareTo(a.id);
+      });
 
       if (mounted) {
         setState(() {
@@ -233,18 +241,17 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
     String selectedSubcategory = '';
     String selectedTransferTo = '';
     bool isSaving = false;
+    bool isCajeroCashToBank = true;
     List<String> selectedTags = List.from(existing?.expense?.tags ?? []);
 
     if (existing?.income != null) {
-      incomeType = existing!.income!.type;
+      incomeType = existing!.income!.type == 'cajero' ? 'fixed' : existing.income!.type;
+      isRecurring = existing.income!.isRecurring;
     }
     if (existing?.expense != null) {
       selectedCategory = existing!.expense!.category;
       selectedSubcategory = existing!.expense!.subcategory;
       selectedTransferTo = existing!.expense!.transferTo ?? '';
-    }
-    if (existing?.expense != null) {
-      selectedCategory = existing!.expense!.category;
     }
 
     showModalBottomSheet(
@@ -376,9 +383,118 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         ),
                       ),
                     ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () => setModalState(() {
+                          movementType = MovementType.cajero;
+                          isCajeroCashToBank = true;
+                        }),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          decoration: BoxDecoration(
+                            color: movementType == MovementType.cajero
+                                ? Colors.teal
+                                : Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: movementType == MovementType.cajero
+                                  ? Colors.teal
+                                  : Theme.of(context).colorScheme.outline,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.local_atm,
+                                color: movementType == MovementType.cajero
+                                    ? Colors.white
+                                    : Colors.teal,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                'Cajero',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: movementType == MovementType.cajero
+                                      ? Colors.white
+                                      : Colors.teal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 20),
+
+                // === CAMPOS CAJERO ===
+                if (movementType == MovementType.cajero) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.info_outline, size: 16, color: Colors.teal),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Transferencia entre tus cuentas. No cuenta como ingreso ni gasto.',
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Direccion',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TypeChip(
+                          icon: Icons.money_rounded,
+                          label: 'Efectivo \u2192 Banco',
+                          isSelected: isCajeroCashToBank,
+                          onTap: () => setModalState(() => isCajeroCashToBank = true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: TypeChip(
+                          icon: Icons.account_balance_rounded,
+                          label: 'Banco \u2192 Efectivo',
+                          isSelected: !isCajeroCashToBank,
+                          onTap: () => setModalState(() => isCajeroCashToBank = false),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: amountController,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Cantidad (\u20ac)',
+                      prefixIcon: Icon(Icons.local_atm),
+                    ),
+                  ),
+                ],
 
                 // === CAMPOS INGRESO ===
                 if (movementType == MovementType.ingreso) ...[
@@ -427,7 +543,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       TextField(
                         controller: recurringNameController,
                         decoration: const InputDecoration(
-                          labelText: 'Nombre (ej: Alquiler, Pensión)',
+                          labelText: 'Nombre (ej: Alquiler, Pensi\u00f3n)',
                           prefixIcon: Icon(Icons.label),
                         ),
                       ),
@@ -457,7 +573,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                   const SizedBox(height: 8),
                   SwitchListTile(
                     title: const Text('Efectivo'),
-                    subtitle: const Text('El dinero está en físico'),
+                    subtitle: const Text('El dinero est\u00e1 en f\u00edsico'),
                     value: isCash,
                     onChanged: (value) => setModalState(() => isCash = value),
                     contentPadding: EdgeInsets.zero,
@@ -731,34 +847,107 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                   onPressed: isSaving ? null : () async {
                     setModalState(() => isSaving = true);
                     try {
-                    if (movementType == MovementType.ingreso) {
+                    if (movementType == MovementType.cajero) {
                       final totalAmount = double.tryParse(amountController.text) ?? 0;
-
                       if (totalAmount <= 0) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Introduce valores válidos')),
+                          const SnackBar(content: Text('Introduce una cantidad valida')),
                         );
                         return;
                       }
 
+                      if (isCajeroCashToBank) {
+                        // Efectivo -> Banco: cash expense + bank income
+                        final cashExpense = Expense(
+                          id: const Uuid().v4(),
+                          amount: totalAmount,
+                          category: 'Cajero',
+                          subcategory: '',
+                          date: selectedDate,
+                          description: 'ATM: Efectivo a Banco',
+                          isRecurring: false,
+                          isCash: true,
+                          tags: const ['cajero', 'transferencia'],
+                        );
+                        await _db.insertExpense(cashExpense);
+
+                        final bankIncome = DailyIncome(
+                          id: const Uuid().v4(),
+                          date: selectedDate,
+                          hoursWorked: 0,
+                          hourlyRate: 0,
+                          totalAmount: totalAmount,
+                          notes: 'ATM: Efectivo a Banco',
+                          type: 'cajero',
+                          isRecurring: false,
+                          isCash: false,
+                        );
+                        await _db.insertIncome(bankIncome);
+                      } else {
+                        // Banco -> Efectivo: bank expense + cash income
+                        final bankExpense = Expense(
+                          id: const Uuid().v4(),
+                          amount: totalAmount,
+                          category: 'Cajero',
+                          subcategory: '',
+                          date: selectedDate,
+                          description: 'ATM: Banco a Efectivo',
+                          isRecurring: false,
+                          isCash: false,
+                          tags: const ['cajero', 'transferencia'],
+                        );
+                        await _db.insertExpense(bankExpense);
+
+                        final cashIncome = DailyIncome(
+                          id: const Uuid().v4(),
+                          date: selectedDate,
+                          hoursWorked: 0,
+                          hourlyRate: 0,
+                          totalAmount: totalAmount,
+                          notes: 'ATM: Banco a Efectivo',
+                          type: 'cajero',
+                          isRecurring: false,
+                          isCash: true,
+                        );
+                        await _db.insertIncome(cashIncome);
+                      }
+
+                      if (mounted) {
+                        Navigator.pop(context);
+                        _loadData();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Transferencia ATM realizada')),
+                        );
+                      }
+                      return;
+                    }
+
+                    if (movementType == MovementType.ingreso) {
+                      final amount = double.tryParse(amountController.text) ?? 0;
+                      if (amount <= 0) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Introduce una cantidad válida')),
+                        );
+                        return;
+                      }
+
+                      final effectiveIsRecurring = incomeType == 'recurring' || isRecurring;
+                      final effectiveType = incomeType == 'recurring' && isRecurring
+                          ? 'recurring'
+                          : incomeType;
+
                       final newIncome = DailyIncome(
                         id: existing?.id ?? const Uuid().v4(),
                         date: selectedDate,
-                        hoursWorked: 0,
-                        hourlyRate: 0,
-                        totalAmount: totalAmount,
+                        totalAmount: amount,
                         notes: descriptionController.text.isEmpty ? null : descriptionController.text,
-                        type: incomeType,
-                        isRecurring: incomeType == 'recurring' || isRecurring,
-                        recurringName: incomeType == 'recurring'
-                            ? recurringNameController.text.isEmpty
+                        type: effectiveType,
+                        isRecurring: effectiveIsRecurring,
+                        recurringName: effectiveIsRecurring
+                            ? (recurringNameController.text.isEmpty
                                 ? null
-                                : recurringNameController.text
-                            : (isRecurring
-                                ? recurringNameController.text.isEmpty
-                                    ? null
-                                    : recurringNameController.text
-                                : null),
+                                : recurringNameController.text)
+                            : null,
                         isCash: isCash,
                       );
 
@@ -895,7 +1084,9 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text(isIncome ? 'Eliminar ingreso' : 'Eliminar gasto'),
-        content: Text(isIncome ? '¿Eliminar este ingreso?' : '¿Eliminar este gasto?'),
+        content: Text(isIncome
+            ? 'Eliminar este ingreso de ${Formatters.formatCurrency(movement.amount)}?'
+            : 'Eliminar este gasto de ${Formatters.formatCurrency(movement.amount)}?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -917,6 +1108,32 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       } else {
         await _db.deleteExpense(movement.id);
       }
+
+      // For ATM transfers, also delete the linked counterpart
+      if (isIncome && movement.income?.type == 'cajero') {
+        final allExpenses = await _db.getAllExpenses();
+        for (final exp in allExpenses) {
+          if (exp.category == 'Cajero' &&
+              exp.date.year == movement.date.year &&
+              exp.date.month == movement.date.month &&
+              exp.date.day == movement.date.day &&
+              exp.amount == movement.amount) {
+            await _db.deleteExpense(exp.id);
+          }
+        }
+      } else if (!isIncome && movement.expense?.category == 'Cajero') {
+        final allIncomes = await _db.getAllIncomes();
+        for (final inc in allIncomes) {
+          if (inc.type == 'cajero' &&
+              inc.date.year == movement.date.year &&
+              inc.date.month == movement.date.month &&
+              inc.date.day == movement.date.day &&
+              inc.totalAmount == movement.amount) {
+            await _db.deleteIncome(inc.id);
+          }
+        }
+      }
+
       _loadData();
 
       if (!mounted) return;
@@ -1150,12 +1367,14 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
 
     // Group movements by date
     final Map<String, List<UnifiedMovement>> grouped = {};
+    final Map<String, DateTime> groupDates = {};
     for (final m in filtered) {
-      final key = '${m.date.year}-${m.date.month}-${m.date.day}';
+      final key = '${m.date.year}-${m.date.month.toString().padLeft(2, '0')}-${m.date.day.toString().padLeft(2, '0')}';
       grouped.putIfAbsent(key, () => []).add(m);
+      groupDates[key] = DateTime(m.date.year, m.date.month, m.date.day);
     }
     final groupedKeys = grouped.keys.toList()
-      ..sort((a, b) => b.compareTo(a));
+      ..sort((a, b) => groupDates[b]!.compareTo(groupDates[a]!));
 
     return Scaffold(
       appBar: AppBar(

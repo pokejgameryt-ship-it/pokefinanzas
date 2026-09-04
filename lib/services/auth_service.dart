@@ -198,6 +198,28 @@ class AuthService {
     await logout();
   }
 
+  static Future<AuthResult> sendPasswordResetEmail(String email) async {
+    try {
+      final url = Uri.parse('$_authUrl:sendOobCode?key=$_apiKey');
+      final response = await http
+          .post(url, body: jsonEncode({
+            'requestType': 'PASSWORD_RESET',
+            'email': email,
+          }))
+          .timeout(_timeout);
+
+      if (response.statusCode == 200) {
+        return AuthResult.success(null);
+      } else {
+        final data = jsonDecode(response.body);
+        final errorMsg = _parseError(data);
+        return AuthResult.error(errorMsg);
+      }
+    } catch (e) {
+      return AuthResult.error('Error de conexion: $e');
+    }
+  }
+
   static String _parseError(Map<String, dynamic> data) {
     final message = data['error']?['message'] ?? 'Error desconocido';
     switch (message) {

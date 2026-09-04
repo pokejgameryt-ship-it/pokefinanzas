@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class NotificationPreference {
@@ -29,6 +28,7 @@ class NotificationPreference {
 
 class PushNotificationService {
   static const String _prefix = 'notif_pref_';
+  static const String _masterKey = 'notif_master_enabled';
   static bool _initialized = false;
 
   static final List<NotificationPreference> defaultPreferences = [
@@ -93,6 +93,12 @@ class PushNotificationService {
       id: 'monthly_report',
       title: 'Informe mensual',
       description: 'Recordatorio para revisar tu informe mensual',
+      category: 'Informes',
+    ),
+    NotificationPreference(
+      id: 'annual_report',
+      title: 'Informe anual',
+      description: 'Resumen anual de finanzas',
       category: 'Informes',
     ),
     NotificationPreference(
@@ -168,9 +174,15 @@ class PushNotificationService {
 
   static Future<void> toggleAll(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_masterKey, enabled);
     for (final pref in defaultPreferences) {
       await prefs.setBool('$_prefix${pref.id}', enabled);
     }
+  }
+
+  static Future<bool> isMasterEnabled() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_masterKey) ?? true;
   }
 
   static Future<int> getEnabledCount() async {

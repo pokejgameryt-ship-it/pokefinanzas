@@ -1,4 +1,18 @@
 {
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default",
+      "runtime": "nodejs20",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local"
+      ]
+    }
+  ],
   "hosting": {
     "public": "build/web",
     "ignore": [
@@ -14,6 +28,10 @@
       {
         "source": "/download.html",
         "destination": "/download.html"
+      },
+      {
+        "source": "/firebase-messaging-sw.js",
+        "destination": "/firebase-messaging-sw.js"
       },
       {
         "source": "**",

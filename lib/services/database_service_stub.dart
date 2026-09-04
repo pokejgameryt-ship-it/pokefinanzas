@@ -65,6 +65,7 @@ abstract class DatabaseServiceInterface {
   Future<void> markNotificationAsRead(String id);
   Future<void> markAllNotificationsAsRead();
   Future<void> deleteNotification(String id);
+  Future<void> deleteAllNotifications();
 
   // Products
   Future<void> insertProduct(Product product);

@@ -205,6 +205,7 @@ class _DistributionScreenState extends State<DistributionScreen> {
         double spent = 0;
         for (final expense in expenses) {
           if (expense.isTransfer) continue;
+          if (expense.category == 'Cajero') continue;
           if (expense.category == cat.name ||
               (expense.isRecurring && expense.recurringName == cat.name)) {
             spent += expense.amount;

@@ -3,7 +3,7 @@ import '../models/unified_movement.dart';
 import '../utils/formatters.dart';
 import '../utils/theme.dart';
 
-class MovementCard extends StatelessWidget {
+class MovementCard extends StatefulWidget {
   final UnifiedMovement movement;
   final VoidCallback onTap;
   final VoidCallback onDelete;
@@ -16,9 +16,61 @@ class MovementCard extends StatelessWidget {
   });
 
   @override
+  State<MovementCard> createState() => _MovementCardState();
+}
+
+class _MovementCardState extends State<MovementCard> {
+  final GlobalKey _cardKey = GlobalKey();
+
+  void _showContextMenu(LongPressStartDetails details) {
+    final RenderBox? renderBox = _cardKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final position = RelativeRect.fromRect(
+      Rect.fromLTWH(details.globalPosition.dx, details.globalPosition.dy, 0, 0),
+      Rect.fromLTWH(0, 0, renderBox.size.width, renderBox.size.height),
+    );
+
+    showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        const PopupMenuItem<String>(
+          value: 'edit',
+          child: Row(
+            children: [
+              Icon(Icons.edit_outlined, size: 20),
+              SizedBox(width: 12),
+              Text('Editar'),
+            ],
+          ),
+        ),
+        const PopupMenuItem<String>(
+          value: 'delete',
+          child: Row(
+            children: [
+              Icon(Icons.delete_outline, size: 20, color: Colors.red),
+              SizedBox(width: 12),
+              Text('Eliminar', style: TextStyle(color: Colors.red)),
+            ],
+          ),
+        ),
+      ],
+    ).then((value) {
+      if (value == 'edit') {
+        widget.onTap();
+      } else if (value == 'delete') {
+        widget.onDelete();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final m = movement;
+    final m = widget.movement;
     final isTransfer = m.expense?.isTransfer == true;
+    final isCajero = (m.isIncome && m.income?.type == 'cajero') ||
+        (!isTransfer && m.expense?.category == 'Cajero');
     final color = isTransfer
         ? Theme.of(context).colorScheme.tertiary
         : (m.isIncome ? AppTheme.incomeColor : AppTheme.expenseColor);
@@ -37,11 +89,13 @@ class MovementCard extends StatelessWidget {
         child: const Icon(Icons.delete_rounded, color: Colors.white, size: 22),
       ),
       confirmDismiss: (_) async {
-        onDelete();
+        widget.onDelete();
         return false;
       },
       child: GestureDetector(
-        onTap: onTap,
+        key: _cardKey,
+        onTap: widget.onTap,
+        onLongPressStart: _showContextMenu,
         child: Container(
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -55,7 +109,6 @@ class MovementCard extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // Icon circle
               Container(
                 width: 42,
                 height: 42,
@@ -66,14 +119,15 @@ class MovementCard extends StatelessWidget {
                 child: Icon(
                   isTransfer
                       ? Icons.swap_horiz
-                      : (m.isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded),
+                      : isCajero
+                          ? Icons.local_atm
+                          : (m.isIncome ? Icons.arrow_downward_rounded : Icons.arrow_upward_rounded),
                   color: color,
                   size: 20,
                 ),
               ),
               const SizedBox(width: 14),
 
-              // Label + subtitle
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -82,9 +136,17 @@ class MovementCard extends StatelessWidget {
                       children: [
                         Flexible(
                           child: Text(
-                            isTransfer && m.expense?.transferTo != null
-                                ? 'Transferencia → ${m.expense!.transferTo}'
-                                : m.label,
+                            isCajero
+                                ? (m.income?.notes?.contains('Efectivo a Banco') == true
+                                    ? 'Cajero: Efectivo \u2192 Banco'
+                                    : m.expense?.description?.contains('Banco a Efectivo') == true
+                                        ? 'Cajero: Banco \u2192 Efectivo'
+                                        : m.income?.notes?.contains('Banco a Efectivo') == true
+                                            ? 'Cajero: Banco \u2192 Efectivo'
+                                            : 'Cajero ATM')
+                                : isTransfer && m.expense?.transferTo != null
+                                    ? 'Transferencia \u2192 ${m.expense!.transferTo}'
+                                    : m.label,
                             style: const TextStyle(
                               fontWeight: FontWeight.w600,
                               fontSize: 14,
@@ -169,7 +231,6 @@ class MovementCard extends StatelessWidget {
 
               const SizedBox(width: 12),
 
-              // Amount
               Text(
                 '${m.isIncome ? '+' : '-'}${Formatters.formatCurrency(m.amount)}',
                 style: TextStyle(

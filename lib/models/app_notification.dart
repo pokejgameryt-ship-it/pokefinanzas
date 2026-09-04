@@ -22,18 +22,19 @@ class AppNotification {
       'message': message,
       'type': type,
       'createdAt': createdAt.toIso8601String(),
-      'isRead': isRead ? 1 : 0,
+      'isRead': isRead,
     };
   }
 
   factory AppNotification.fromMap(Map<String, dynamic> map) {
+    final rawIsRead = map['isRead'];
     return AppNotification(
-      id: map['id'],
-      title: map['title'],
-      message: map['message'],
-      type: map['type'],
-      createdAt: DateTime.parse(map['createdAt']),
-      isRead: map['isRead'] == 1,
+      id: map['id'] ?? '',
+      title: map['title'] ?? '',
+      message: map['message'] ?? '',
+      type: map['type'] ?? '',
+      createdAt: map['createdAt'] != null ? DateTime.tryParse(map['createdAt'].toString()) ?? DateTime.now() : DateTime.now(),
+      isRead: rawIsRead == true || rawIsRead == 1,
     );
   }
 

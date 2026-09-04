@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import '../../models/category_model.dart';
+import '../../models/savings_distribution.dart';
 import '../../services/database_service.dart';
+import '../../utils/formatters.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -13,6 +15,7 @@ class CategoriesScreen extends StatefulWidget {
 class _CategoriesScreenState extends State<CategoriesScreen> {
   final _db = DatabaseService.instance;
   List<CategoryModel> _categories = [];
+  SavingsDistribution? _currentDist;
   bool _loading = true;
 
   @override
@@ -23,10 +26,22 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
   Future<void> _loadCategories() async {
     final cats = await _db.getAllCategories();
+    final now = DateTime.now();
+    final dist = await _db.getDistribution(now.month, now.year);
     setState(() {
       _categories = cats..sort((a, b) => a.order.compareTo(b.order));
+      _currentDist = dist;
       _loading = false;
     });
+  }
+
+  DistributionCategory? _getDistCat(CategoryModel cat) {
+    if (_currentDist == null) return null;
+    try {
+      return _currentDist!.categories.firstWhere((c) => c.name == cat.name);
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _addCategory() async {
@@ -41,12 +56,45 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   Future<void> _editCategory(CategoryModel cat) async {
-    final result = await Navigator.push<CategoryModel>(
+    final distCat = _getDistCat(cat);
+    final result = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(builder: (_) => _CategoryEditScreen(category: cat)),
+      MaterialPageRoute(
+        builder: (_) => _CategoryEditScreen(
+          category: cat,
+          distCategory: distCat,
+          monthlyIncome: _currentDist?.monthlyIncome ?? 0,
+        ),
+      ),
     );
     if (result != null) {
-      await _db.updateCategory(result);
+      final updatedCat = result['category'] as CategoryModel;
+      await _db.updateCategory(updatedCat);
+
+      // Save budget changes to distribution
+      final budgetType = result['budgetType'] as String?;
+      final budgetValue = result['budgetValue'] as double?;
+      if (_currentDist != null && budgetType != null && budgetValue != null) {
+        final cats = List<DistributionCategory>.from(_currentDist!.categories);
+        final idx = cats.indexWhere((c) => c.name == cat.name);
+        if (idx >= 0) {
+          if (budgetType == 'fixed') {
+            cats[idx] = cats[idx].copyWith(
+              fixedAmount: budgetValue,
+              percentage: null,
+              isFixed: true,
+            );
+          } else {
+            cats[idx] = cats[idx].copyWith(
+              percentage: budgetValue,
+              fixedAmount: null,
+              isFixed: false,
+            );
+          }
+          final updatedDist = _currentDist!.copyWith(categories: cats);
+          await _db.insertDistribution(updatedDist);
+        }
+      }
       await _loadCategories();
     }
   }
@@ -112,6 +160,12 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   },
                   itemBuilder: (context, index) {
                     final cat = _categories[index];
+                    final distCat = _getDistCat(cat);
+                    final budgetStr = distCat != null
+                        ? (distCat.isFixed
+                            ? Formatters.formatCurrency(distCat.fixedAmount ?? 0)
+                            : '${(distCat.percentage ?? 0).toStringAsFixed(0)}%')
+                        : 'Sin presupuesto';
                     return ListTile(
                       key: ValueKey(cat.id),
                       leading: Container(
@@ -124,7 +178,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                         child: Icon(cat.icon, color: cat.color, size: 20),
                       ),
                       title: Text(cat.name),
-                      subtitle: Text(cat.isDefault ? 'Predeterminada' : 'Personalizada'),
+                      subtitle: Text(budgetStr),
                       trailing: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -150,7 +204,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
 class _CategoryEditScreen extends StatefulWidget {
   final CategoryModel? category;
-  const _CategoryEditScreen({this.category});
+  final DistributionCategory? distCategory;
+  final double monthlyIncome;
+
+  const _CategoryEditScreen({
+    this.category,
+    this.distCategory,
+    this.monthlyIncome = 0,
+  });
 
   @override
   State<_CategoryEditScreen> createState() => _CategoryEditScreenState();
@@ -158,8 +219,11 @@ class _CategoryEditScreen extends StatefulWidget {
 
 class _CategoryEditScreenState extends State<_CategoryEditScreen> {
   late TextEditingController _nameController;
+  late TextEditingController _budgetController;
   late int _selectedIcon;
   late int _selectedColor;
+  late bool _isFixed;
+  late bool _hasBudget;
 
   static const _icons = [
     Icons.home, Icons.restaurant, Icons.directions_bus, Icons.bolt,
@@ -187,11 +251,27 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
     _nameController = TextEditingController(text: widget.category?.name ?? '');
     _selectedIcon = widget.category?.iconCodePoint ?? Icons.category.codePoint;
     _selectedColor = widget.category?.colorValue ?? Colors.grey.value;
+
+    if (widget.distCategory != null) {
+      _isFixed = widget.distCategory!.isFixed;
+      _hasBudget = true;
+      final val = widget.distCategory!.isFixed
+          ? (widget.distCategory!.fixedAmount ?? 0)
+          : (widget.distCategory!.percentage ?? 0);
+      _budgetController = TextEditingController(
+        text: val > 0 ? (widget.distCategory!.isFixed ? val.toStringAsFixed(2) : val.toStringAsFixed(0)) : '',
+      );
+    } else {
+      _isFixed = true;
+      _hasBudget = false;
+      _budgetController = TextEditingController();
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
+    _budgetController.dispose();
     super.dispose();
   }
 
@@ -203,6 +283,7 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
       );
       return;
     }
+
     final cat = CategoryModel(
       id: widget.category?.id ?? const Uuid().v4(),
       name: name,
@@ -212,7 +293,19 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
       isEnabled: widget.category?.isEnabled ?? true,
       order: widget.category?.order ?? 0,
     );
-    Navigator.pop(context, cat);
+
+    String? budgetType;
+    double? budgetValue;
+    if (_hasBudget) {
+      budgetType = _isFixed ? 'fixed' : 'percentage';
+      budgetValue = double.tryParse(_budgetController.text) ?? 0;
+    }
+
+    Navigator.pop(context, {
+      'category': cat,
+      'budgetType': budgetType,
+      'budgetValue': budgetValue,
+    });
   }
 
   @override
@@ -235,6 +328,51 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
             ),
           ),
           const SizedBox(height: 24),
+
+          // ── Budget ──
+          if (widget.category != null) ...[
+            Row(
+              children: [
+                const Text('Presupuesto', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Spacer(),
+                Switch(
+                  value: _hasBudget,
+                  onChanged: (v) => setState(() => _hasBudget = v),
+                ),
+              ],
+            ),
+            if (_hasBudget) ...[
+              const SizedBox(height: 8),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro)),
+                  ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent)),
+                ],
+                selected: {_isFixed},
+                onSelectionChanged: (s) => setState(() => _isFixed = s.first),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _budgetController,
+                keyboardType: TextInputType.number,
+                decoration: InputDecoration(
+                  labelText: _isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
+                  border: const OutlineInputBorder(),
+                  prefixText: _isFixed ? '€ ' : '',
+                  suffixText: _isFixed ? '' : '%',
+                ),
+              ),
+              if (_isFixed && widget.monthlyIncome > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Ingreso mensual: ${Formatters.formatCurrency(widget.monthlyIncome)}',
+                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                ),
+              ],
+            ],
+            const SizedBox(height: 24),
+          ],
+
           const Text('Icono', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Wrap(
@@ -290,7 +428,6 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
             }).toList(),
           ),
           const SizedBox(height: 32),
-          // Preview
           Center(
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),

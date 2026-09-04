@@ -21,19 +21,21 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
 
   Future<void> _loadPreferences() async {
     final grouped = await PushNotificationService.getPreferencesByCategory();
-    final enabledCount = await PushNotificationService.getEnabledCount();
-    final totalCount = PushNotificationService.defaultPreferences.length;
+    final master = await PushNotificationService.isMasterEnabled();
     
     setState(() {
       _groupedPreferences = grouped;
-      _allEnabled = enabledCount == totalCount;
+      _allEnabled = master;
       _isLoading = false;
     });
   }
 
   Future<void> _togglePreference(String id, bool value) async {
     await PushNotificationService.setEnabled(id, value);
-    _loadPreferences();
+    final grouped = await PushNotificationService.getPreferencesByCategory();
+    setState(() {
+      _groupedPreferences = grouped;
+    });
   }
 
   Future<void> _toggleAll(bool value) async {
@@ -59,7 +61,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               children: [
-                // Master toggle
                 Card(
                   margin: const EdgeInsets.all(16),
                   color: _allEnabled
@@ -87,8 +88,8 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                               ),
                               Text(
                                 _allEnabled
-                                    ? 'Recibirás notificaciones push según tu configuración'
-                                    : 'No recibirás ninguna notificación',
+                                    ? 'Recibiras notificaciones segun tu configuracion'
+                                    : 'No recibiras ninguna notificacion',
                                 style: Theme.of(context).textTheme.bodySmall,
                               ),
                             ],
@@ -99,7 +100,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   ),
                 ),
 
-                // Categories
                 ..._groupedPreferences.entries.map((entry) {
                   final category = entry.key;
                   final preferences = entry.value;
@@ -140,7 +140,6 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                   );
                 }),
 
-                // Info card
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: Card(
@@ -164,23 +163,23 @@ class _NotificationSettingsScreenState extends State<NotificationSettingsScreen>
                           const SizedBox(height: 8),
                           Text(
                             'Las notificaciones te ayudan a mantener el control de tus finanzas. '
-                            'Puedes activar o desactivar cada tipo según tus preferencias.',
+                            'Puedes activar o desactivar cada tipo segun tus preferencias.',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               color: colorScheme.onSurfaceVariant,
                             ),
                           ),
                           const SizedBox(height: 12),
                           Text(
-                            'Tipos de notificación:',
+                            'Tipos de notificacion:',
                             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.bold,
                             ),
                           ),
                           const SizedBox(height: 4),
-                          Text('• Alertas de presupuesto y gastos', style: Theme.of(context).textTheme.bodySmall),
-                          Text('• Recordatorios de metas de ahorro', style: Theme.of(context).textTheme.bodySmall),
-                          Text('• Avisos de pagos recurrentes y a plazos', style: Theme.of(context).textTheme.bodySmall),
-                          Text('• Informes semanales y mensuales', style: Theme.of(context).textTheme.bodySmall),
+                          Text('- Alertas de presupuesto y gastos', style: Theme.of(context).textTheme.bodySmall),
+                          Text('- Recordatorios de metas de ahorro', style: Theme.of(context).textTheme.bodySmall),
+                          Text('- Avisos de pagos recurrentes y a plazos', style: Theme.of(context).textTheme.bodySmall),
+                          Text('- Informes semanales y mensuales', style: Theme.of(context).textTheme.bodySmall),
                         ],
                       ),
                     ),

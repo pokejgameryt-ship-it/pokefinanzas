@@ -1,11 +1,16 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:open_file/open_file.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/auth/auth_screen.dart';
 import 'screens/main_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'services/database_service.dart';
 import 'services/auth_service.dart';
+import 'services/update_service.dart';
 import 'utils/formatters.dart';
 import 'utils/theme.dart';
 
@@ -126,13 +131,113 @@ class _SyncAndGoMainState extends State<_SyncAndGoMain> {
   }
 
   Future<void> _sync() async {
-    await DatabaseService.instance.resetForNewUser();
     try {
       await DatabaseService.instance.syncFromFirebase();
     } catch (_) {}
+    // Actualizar version remota
+    try {
+      await UpdateService.updateRemoteVersion();
+    } catch (_) {}
     if (mounted) {
       setState(() => _syncing = false);
+      _checkForUpdate();
     }
+  }
+
+  Future<void> _checkForUpdate() async {
+    try {
+      final hasUpdate = await UpdateService.isNewVersionAvailable();
+      if (hasUpdate && mounted) {
+        _showUpdateDialog();
+      }
+    } catch (_) {}
+  }
+
+  void _showUpdateDialog() {
+    final version = UpdateService.remoteVersion ?? 'nueva';
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.system_update, size: 48, color: Colors.orange),
+        title: const Text('Actualizacion disponible'),
+        content: Text(
+          'Hay una nueva version de PokeFinanzas (v$version). '
+          'Actualiza para obtener las ultimas mejoras.',
+        ),
+        actions: [
+          if (!kIsWeb)
+            FilledButton.icon(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _downloadAndOpenApk(ctx, version);
+              },
+              icon: const Icon(Icons.download),
+              label: const Text('Descargar e instalar'),
+            ),
+          if (kIsWeb)
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _reloadPage();
+              },
+              child: const Text('Actualizar ahora'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _downloadAndOpenApk(BuildContext context, String version) async {
+    final apkUrl = 'https://github.com/pokejgameryt-ship-it/pokefinanzas/releases/download/v$version/app-release.apk';
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const AlertDialog(
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Descargando actualizacion...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final dir = await getTemporaryDirectory();
+      final filePath = '${dir.path}/app-release.apk';
+      await Dio().download(apkUrl, filePath);
+      if (mounted) {
+        Navigator.of(context).pop();
+        await OpenFile.open(filePath);
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error al descargar: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _reloadPage() {
+    if (kIsWeb) {
+      _reloadPageWeb();
+    } else {
+      Navigator.of(context).pushReplacementNamed('/main');
+    }
+  }
+
+  void _reloadPageWeb() {
+    // En web, volver a la pantalla principal
+    Navigator.of(context).pushReplacementNamed('/main');
   }
 
   @override

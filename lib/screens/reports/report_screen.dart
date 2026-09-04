@@ -27,22 +27,29 @@ class _ReportScreenState extends State<ReportScreen> {
   final _db = DatabaseService.instance;
   bool _isLoading = true;
 
-  // Monthly data
+  // Shared data
   double _totalIncome = 0;
   double _totalExpenses = 0;
-  double _savings = 0;
-  double _totalRedistributed = 0;
+  double _totalCashIncome = 0;
+  double _totalCashExpense = 0;
+  double _totalBankIncome = 0;
+  double _totalBankExpense = 0;
   Map<String, double> _expensesByCategory = {};
   Map<String, double> _incomeByType = {};
+
+  // Monthly data
+  double _totalRedistributed = 0;
   SavingsDistribution? _distribution;
 
   // Weekly data
   List<MapEntry<DateTime, double>> _weeklyIncome = [];
   List<MapEntry<DateTime, double>> _weeklyExpenses = [];
+  List<double> _weeklyCumulativeBalance = [];
 
   // Annual data
   List<MapEntry<DateTime, double>> _annualIncome = [];
   List<MapEntry<DateTime, double>> _annualExpenses = [];
+  List<double> _annualCumulativeBalance = [];
 
   late final int _month;
   late final int _year;
@@ -92,20 +99,31 @@ class _ReportScreenState extends State<ReportScreen> {
     _totalExpenses = await _db.getTotalExpensesByMonth(_month, _year);
 
     _distribution = await _db.getDistribution(_month, _year);
-    _savings = _distribution?.savings ?? 0;
 
     // Category breakdown
     final expenses = await _db.getExpensesByMonth(_month, _year);
     for (final e in expenses) {
       if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
       _expensesByCategory[e.category] = (_expensesByCategory[e.category] ?? 0) + e.amount;
     }
 
     // Income by type
     final incomes = await _db.getIncomesByMonth(_month, _year);
     for (final i in incomes) {
+      if (i.type == 'cajero') continue;
       final type = i.isRecurring ? (i.recurringName ?? 'Recurrente') : _getIncomeTypeLabel(i.type);
       _incomeByType[type] = (_incomeByType[type] ?? 0) + i.totalAmount;
+      _totalCashIncome += i.isCash ? i.totalAmount : 0;
+      _totalBankIncome += !i.isCash ? i.totalAmount : 0;
+    }
+
+    // Cash/expense split
+    for (final e in expenses) {
+      if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
+      _totalCashExpense += e.isCash ? e.amount : 0;
+      _totalBankExpense += !e.isCash ? e.amount : 0;
     }
 
     // Redistribution total
@@ -122,27 +140,40 @@ class _ReportScreenState extends State<ReportScreen> {
 
   Future<void> _loadWeeklyData() async {
     final now = DateTime.now();
-    final weekStart = now.subtract(Duration(days: now.weekday - 1));
+    // Usar la semana anterior (lunes a domingo pasados), igual que la notificación
+    final startOfCurrentWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final prevWeekEnd = startOfCurrentWeek.subtract(const Duration(days: 1));
+    final weekStart = DateTime(prevWeekEnd.year, prevWeekEnd.month, prevWeekEnd.day).subtract(const Duration(days: 6));
+    double cumulative = 0;
 
     for (int i = 0; i < 7; i++) {
-      final day = weekStart.add(Duration(days: i));
-      if (day.isAfter(now)) break;
+      final day = DateTime(weekStart.year, weekStart.month, weekStart.day + i);
 
       double dayIncome = 0;
       double dayExpenses = 0;
 
       final dayIncomes = await _db.getIncomesByDate(day);
       for (final inc in dayIncomes) {
+        if (inc.type == 'cajero') continue;
         dayIncome += inc.totalAmount;
+        _totalCashIncome += inc.isCash ? inc.totalAmount : 0;
+        _totalBankIncome += !inc.isCash ? inc.totalAmount : 0;
       }
 
       final dayExpensesList = await _db.getExpensesByDate(day);
       for (final exp in dayExpensesList) {
-        if (!exp.isTransfer) dayExpenses += exp.amount;
+        if (exp.isTransfer) continue;
+        if (exp.category == 'Cajero') continue;
+        dayExpenses += exp.amount;
+        _totalCashExpense += exp.isCash ? exp.amount : 0;
+        _totalBankExpense += !exp.isCash ? exp.amount : 0;
+        _expensesByCategory[exp.category] = (_expensesByCategory[exp.category] ?? 0) + exp.amount;
       }
 
+      cumulative += dayIncome - dayExpenses;
       _weeklyIncome.add(MapEntry(day, dayIncome));
       _weeklyExpenses.add(MapEntry(day, dayExpenses));
+      _weeklyCumulativeBalance.add(cumulative);
     }
 
     _totalIncome = _weeklyIncome.fold(0, (sum, e) => sum + e.value);
@@ -150,12 +181,32 @@ class _ReportScreenState extends State<ReportScreen> {
   }
 
   Future<void> _loadAnnualData() async {
+    double cumulative = 0;
     for (int m = 1; m <= 12; m++) {
       final date = DateTime(_year, m, 1);
       final inc = await _db.getTotalIncomeByMonth(m, _year);
       final exp = await _db.getTotalExpensesByMonth(m, _year);
+
+      final monthIncomes = await _db.getIncomesByMonth(m, _year);
+      for (final i in monthIncomes) {
+        if (i.type == 'cajero') continue;
+        _totalCashIncome += i.isCash ? i.totalAmount : 0;
+        _totalBankIncome += !i.isCash ? i.totalAmount : 0;
+      }
+
+      final monthExpenses = await _db.getExpensesByMonth(m, _year);
+      for (final e in monthExpenses) {
+        if (e.isTransfer) continue;
+        if (e.category == 'Cajero') continue;
+        _totalCashExpense += e.isCash ? e.amount : 0;
+        _totalBankExpense += !e.isCash ? e.amount : 0;
+        _expensesByCategory[e.category] = (_expensesByCategory[e.category] ?? 0) + e.amount;
+      }
+
+      cumulative += inc - exp;
       _annualIncome.add(MapEntry(date, inc));
       _annualExpenses.add(MapEntry(date, exp));
+      _annualCumulativeBalance.add(cumulative);
     }
 
     _totalIncome = _annualIncome.fold(0, (sum, e) => sum + e.value);
@@ -183,7 +234,11 @@ class _ReportScreenState extends State<ReportScreen> {
       case 'monthly':
         return 'Informe ${_getMonthName(_month)} $_year';
       case 'weekly':
-        return 'Resumen Semanal';
+        final now = DateTime.now();
+        final startOfCurrentWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+        final prevWeekEnd = startOfCurrentWeek.subtract(const Duration(days: 1));
+        final prevWeekStart = DateTime(prevWeekEnd.year, prevWeekEnd.month, prevWeekEnd.day).subtract(const Duration(days: 6));
+        return 'Resumen Semanal\n${Formatters.formatDate(prevWeekStart)} - ${Formatters.formatDate(prevWeekEnd)}';
       case 'annual':
         return 'Informe Anual $_year';
       default:
@@ -233,8 +288,8 @@ class _ReportScreenState extends State<ReportScreen> {
                     ],
                     const SizedBox(height: 24),
 
-                    // ── Category Breakdown (monthly only) ──
-                    if (widget.reportType == 'monthly' && _expensesByCategory.isNotEmpty) ...[
+                    // ── Category Breakdown (all types) ──
+                    if (_expensesByCategory.isNotEmpty) ...[
                       _buildCategoryBreakdown(colorScheme),
                       const SizedBox(height: 24),
                     ],
@@ -242,6 +297,20 @@ class _ReportScreenState extends State<ReportScreen> {
                     // ── Income Breakdown (monthly only) ──
                     if (widget.reportType == 'monthly' && _incomeByType.isNotEmpty) ...[
                       _buildIncomeBreakdown(colorScheme),
+                      const SizedBox(height: 24),
+                    ],
+
+                    // ── Cash/Bank Balance ──
+                    _buildCashBankCard(colorScheme),
+                    const SizedBox(height: 24),
+
+                    // ── Balance Evolution Line Chart ──
+                    if (widget.reportType == 'weekly' && _weeklyCumulativeBalance.isNotEmpty) ...[
+                      _buildBalanceEvolutionChart(colorScheme, _weeklyCumulativeBalance, _weeklyIncome),
+                      const SizedBox(height: 24),
+                    ],
+                    if (widget.reportType == 'annual' && _annualCumulativeBalance.isNotEmpty) ...[
+                      _buildBalanceEvolutionChart(colorScheme, _annualCumulativeBalance, _annualIncome),
                       const SizedBox(height: 24),
                     ],
 
@@ -641,6 +710,179 @@ class _ReportScreenState extends State<ReportScreen> {
                 ),
               );
             }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashBankCard(ColorScheme colorScheme) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Efectivo y Banco',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _buildCashBankRow(
+                  label: 'Efectivo',
+                  income: _totalCashIncome,
+                  expense: _totalCashExpense,
+                  icon: Icons.money,
+                  color: const Color(0xFF4CAF50),
+                )),
+                const SizedBox(width: 12),
+                Expanded(child: _buildCashBankRow(
+                  label: 'Banco',
+                  income: _totalBankIncome,
+                  expense: _totalBankExpense,
+                  icon: Icons.account_balance,
+                  color: const Color(0xFF2196F3),
+                )),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCashBankRow({
+    required String label,
+    required double income,
+    required double expense,
+    required IconData icon,
+    required Color color,
+  }) {
+    final balance = income - expense;
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant)),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.arrow_downward, size: 12, color: AppTheme.incomeColor),
+            const SizedBox(width: 2),
+            Text(Formatters.formatCurrency(income), style: TextStyle(fontSize: 11, color: AppTheme.incomeColor)),
+          ],
+        ),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.arrow_upward, size: 12, color: AppTheme.expenseColor),
+            const SizedBox(width: 2),
+            Text(Formatters.formatCurrency(expense), style: TextStyle(fontSize: 11, color: AppTheme.expenseColor)),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(Formatters.formatCurrency(balance),
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13,
+            color: balance >= 0 ? const Color(0xFF4CAF50) : Colors.red)),
+      ],
+    );
+  }
+
+  Widget _buildBalanceEvolutionChart(ColorScheme colorScheme, List<double> cumulative, List<MapEntry<DateTime, double>> incomeData) {
+    if (cumulative.isEmpty) return const SizedBox();
+    const monthNames = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+
+    final spots = <FlSpot>[];
+    double minVal = 0;
+    double maxVal = 0;
+    for (int i = 0; i < cumulative.length; i++) {
+      spots.add(FlSpot(i.toDouble(), cumulative[i]));
+      if (cumulative[i] < minVal) minVal = cumulative[i];
+      if (cumulative[i] > maxVal) maxVal = cumulative[i];
+    }
+    final padding = (maxVal - minVal) * 0.2;
+    final minY = minVal - padding;
+    final maxY = maxVal + padding;
+
+    final isWeekly = widget.reportType == 'weekly';
+    final days = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Evolución del Balance',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 200,
+              child: LineChart(
+                LineChartData(
+                  minY: minY,
+                  maxY: maxY,
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      color: const Color(0xFF4CAF50),
+                      barWidth: 2,
+                      belowBarData: BarAreaData(
+                        show: true,
+                        color: const Color(0xFF4CAF50).withValues(alpha: 0.1),
+                      ),
+                      dotData: const FlDotData(show: true),
+                    ),
+                  ],
+                  titlesData: FlTitlesData(
+                    show: true,
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        getTitlesWidget: (value, meta) {
+                          final idx = value.toInt();
+                          if (isWeekly) {
+                            if (idx >= 0 && idx < days.length) return Text(days[idx], style: const TextStyle(fontSize: 10));
+                          } else {
+                            if (idx >= 0 && idx < 12) return Text(monthNames[idx], style: const TextStyle(fontSize: 10));
+                          }
+                          return const Text('');
+                        },
+                      ),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        reservedSize: 50,
+                        getTitlesWidget: (value, meta) {
+                          return Text(Formatters.formatCurrency(value), style: const TextStyle(fontSize: 9));
+                        },
+                      ),
+                    ),
+                    topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                    rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: (maxY - minY) / 4,
+                  ),
+                  borderData: FlBorderData(show: false),
+                  extraLinesData: ExtraLinesData(
+                    horizontalLines: [
+                      HorizontalLine(
+                        y: 0,
+                        color: colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                        strokeWidth: 1,
+                        dashArray: [5, 5],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
           ],
         ),
       ),

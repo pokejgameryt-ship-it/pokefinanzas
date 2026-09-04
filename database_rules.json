@@ -1,5 +1,9 @@
 {
   "rules": {
+    "app_config": {
+      ".read": true,
+      ".write": false
+    },
     "users": {
       "$uid": {
         ".read": "auth != null && auth.uid === $uid",
@@ -8,59 +12,78 @@
         "incomes": {
           "$incomeId": {
             ".validate": "newData.hasChildren(['date', 'totalAmount', 'type'])",
+            "id": { ".validate": "newData.isString()" },
             "date": { ".validate": "newData.isString()" },
             "totalAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "type": { ".validate": "newData.isString() && newData.val().length > 0" },
             "notes": { ".validate": "newData.isString()" },
-            "isRecurring": { ".validate": "newData.isBoolean()" },
+            "hoursWorked": { ".validate": "newData.isNumber()" },
+            "hourlyRate": { ".validate": "newData.isNumber()" },
+            "isRecurring": { ".validate": "newData.isNumber() || newData.isBoolean()" },
             "recurringName": { ".validate": "newData.isString()" },
-            "currencyCode": { ".validate": "newData.isString()" },
-            "$other": { ".validate": false }
+            "isCash": { ".validate": "newData.isNumber() || newData.isBoolean()" },
+            "currencyCode": { ".validate": "newData.isString()" }
           }
         },
 
         "expenses": {
           "$expenseId": {
             ".validate": "newData.hasChildren(['amount', 'category', 'date'])",
+            "id": { ".validate": "newData.isString()" },
             "amount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "category": { ".validate": "newData.isString() && newData.val().length > 0" },
-            "date": { ".validate": "newData.isString()" },
             "subcategory": { ".validate": "newData.isString()" },
+            "date": { ".validate": "newData.isString()" },
             "description": { ".validate": "newData.isString()" },
-            "isRecurring": { ".validate": "newData.isBoolean()" },
+            "isRecurring": { ".validate": "newData.isNumber() || newData.isBoolean()" },
             "recurringName": { ".validate": "newData.isString()" },
-            "isCash": { ".validate": "newData.isBoolean()" },
-            "currencyCode": { ".validate": "newData.isString()" },
-            "$other": { ".validate": false }
+            "transferTo": { ".validate": "newData.isString()" },
+            "isCash": { ".validate": "newData.isNumber() || newData.isBoolean()" },
+            "tags": { ".validate": true },
+            "currencyCode": { ".validate": "newData.isString()" }
           }
         },
 
         "goals": {
           "$goalId": {
             ".validate": "newData.hasChildren(['name', 'targetAmount', 'savedAmount', 'createdAt'])",
+            "id": { ".validate": "newData.isString()" },
             "name": { ".validate": "newData.isString() && newData.val().length > 0" },
             "targetAmount": { ".validate": "newData.isNumber() && newData.val() > 0" },
             "savedAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "productIds": { ".validate": "newData.isString()" },
-            "isActive": { ".validate": "newData.isNumber()" },
+            "isActive": { ".validate": "newData.isNumber() || newData.isBoolean()" },
             "deadline": { ".validate": "newData.isString()" },
             "createdAt": { ".validate": "newData.isString()" },
-            "hasFixedPayment": { ".validate": "newData.isNumber()" },
+            "hasFixedPayment": { ".validate": "newData.isNumber() || newData.isBoolean()" },
             "paymentFrequency": { ".validate": "newData.isString()" },
             "paymentAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "totalPayments": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "completedPayments": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "firstPaymentDate": { ".validate": "newData.isString()" },
-            "paymentHistory": {
-              "$index": {
-                ".validate": "newData.hasChildren(['date', 'amount'])",
-                "date": { ".validate": "newData.isString()" },
-                "amount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-                "note": { ".validate": "newData.isString()" },
-                "$other": { ".validate": false }
-              }
-            },
-            "$other": { ".validate": false }
+            "paymentHistory": { ".validate": true }
+          }
+        },
+
+        "products": {
+          "$productId": {
+            ".validate": "newData.hasChildren(['name', 'price', 'createdAt'])",
+            "id": { ".validate": "newData.isString()" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
+            "price": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "isFavorite": { ".validate": "newData.isNumber() || newData.isBoolean()" },
+            "groupId": { ".validate": "newData.isString()" },
+            "createdAt": { ".validate": "newData.isString()" }
+          }
+        },
+
+        "product_groups": {
+          "$groupId": {
+            ".validate": "newData.hasChildren(['name', 'createdAt'])",
+            "id": { ".validate": "newData.isString()" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
+            "colorValue": { ".validate": "newData.isNumber()" },
+            "createdAt": { ".validate": "newData.isString()" }
           }
         },
 
@@ -70,29 +93,10 @@
             "month": { ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 12" },
             "year": { ".validate": "newData.isNumber() && newData.val() >= 2020" },
             "monthlyIncome": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-            "categories": {
-              "$catIndex": {
-                ".validate": "newData.hasChildren(['name'])",
-                "name": { ".validate": "newData.isString() && newData.val().length > 0" },
-                "fixedAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-                "percentage": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
-                "isFixed": { ".validate": "newData.isBoolean()" },
-                "spentAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-                "isAutomatic": { ".validate": "newData.isBoolean()" },
-                "isEnabled": { ".validate": "newData.isBoolean()" },
-                "redistributionApplied": { ".validate": "newData.isBoolean()" },
-                "totalRedistributionReceived": { ".validate": "newData.isNumber() && newData.val() >= 0" },
-                "redistributionPercentages": {
-                  "$catName": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" }
-                },
-                "$other": { ".validate": false }
-              }
-            },
-            "redistributionConfig": {
-              "enabled": { ".validate": "newData.isBoolean()" },
-              "$other": { ".validate": false }
-            },
-            "$other": { ".validate": false }
+            "categories": { ".validate": true },
+            "redistributionConfig": { ".validate": true },
+            "savings": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "totalSpent": { ".validate": "newData.isNumber() && newData.val() >= 0" }
           }
         },
 
@@ -103,21 +107,71 @@
             "limit": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "spent": { ".validate": "newData.isNumber() && newData.val() >= 0" },
             "month": { ".validate": "newData.isNumber()" },
-            "year": { ".validate": "newData.isNumber()" },
-            "$other": { ".validate": false }
+            "year": { ".validate": "newData.isNumber()" }
           }
         },
 
         "notifications": {
           "$notifId": {
-            ".validate": "newData.hasChildren(['title', 'type', 'date'])",
-            "title": { ".validate": "newData.isString() && newData.val().length > 0" },
-            "type": { ".validate": "newData.isString()" },
-            "date": { ".validate": "newData.isString()" },
+            ".validate": "newData.hasChildren(['id', 'title', 'message', 'type', 'createdAt', 'isRead'])",
+            "id": { ".validate": "newData.isString()" },
+            "title": { ".validate": "newData.isString()" },
             "message": { ".validate": "newData.isString()" },
-            "read": { ".validate": "newData.isBoolean()" },
-            "incomeId": { ".validate": "newData.isString()" },
-            "$other": { ".validate": false }
+            "type": { ".validate": "newData.isString()" },
+            "createdAt": { ".validate": "newData.isString()" },
+            "isRead": { ".validate": "newData.isBoolean() || newData.isNumber()" }
+          }
+        },
+
+        "categories": {
+          "$categoryId": {
+            ".validate": "newData.hasChildren(['name', 'iconCodePoint', 'colorValue'])",
+            "id": { ".validate": "newData.isString()" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
+            "iconCodePoint": { ".validate": "newData.isNumber()" },
+            "colorValue": { ".validate": "newData.isNumber()" },
+            "isDefault": { ".validate": "newData.isNumber() || newData.isBoolean()" },
+            "isEnabled": { ".validate": "newData.isNumber() || newData.isBoolean()" },
+            "order": { ".validate": "newData.isNumber()" }
+          }
+        },
+
+        "subcategories": {
+          "$subcategoryId": {
+            ".validate": "newData.hasChildren(['name', 'category'])",
+            "id": { ".validate": "newData.isString()" },
+            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
+            "category": { ".validate": "newData.isString() && newData.val().length > 0" }
+          }
+        },
+
+        "redistributionSettings": {
+          "globalRedistributionDay": { ".validate": "newData.isNumber()" },
+          "redistributionEnabled": { ".validate": "newData.isBoolean()" }
+        },
+
+        "redistributionConfigs": {
+          "$categoryName": {
+            ".validate": "newData.hasChildren(['percentage', 'isFixed', 'isEnabled'])",
+            "percentage": { ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100" },
+            "fixedAmount": { ".validate": "newData.isNumber() && newData.val() >= 0" },
+            "isFixed": { ".validate": "newData.isBoolean()" },
+            "isEnabled": { ".validate": "newData.isBoolean()" },
+            "redistributionDay": { ".validate": "newData.isNumber()" }
+          }
+        },
+
+        "redistributionPresets": {
+          "$presetId": {
+            ".validate": "newData.hasChildren(['name', 'categories'])",
+            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
+            "categories": { ".validate": true }
+          }
+        },
+
+        "tags": {
+          "$tag": {
+            ".validate": "newData.isString()"
           }
         },
 
@@ -125,20 +179,11 @@
           ".validate": "newData.isString() && (newData.val() === 'EUR' || newData.val() === 'USD' || newData.val() === 'GBP')"
         },
 
-        "redistributionPresets": {
-          "$presetId": {
-            ".validate": "newData.hasChildren(['name', 'categories'])",
-            "name": { ".validate": "newData.isString() && newData.val().length > 0" },
-            "categories": {
-              "$catName": {
-                ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 100"
-              }
-            },
-            "$other": { ".validate": false }
+        "fcm_tokens": {
+          "$token": {
+            ".validate": "newData.isString()"
           }
-        },
-
-        "$other": { ".validate": false }
+        }
       }
     }
   }

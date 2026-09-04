@@ -27,13 +27,19 @@ class Product {
   }
 
   factory Product.fromMap(Map<String, dynamic> map) {
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(map['createdAt']?.toString() ?? '');
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
     return Product(
-      id: map['id'],
-      name: map['name'],
-      price: map['price'],
-      isFavorite: map['isFavorite'] == 1,
-      groupId: map['groupId'] as String?,
-      createdAt: DateTime.parse(map['createdAt']),
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      price: (map['price'] as num?)?.toDouble() ?? 0,
+      isFavorite: map['isFavorite'] == 1 || map['isFavorite'] == true,
+      groupId: map['groupId']?.toString(),
+      createdAt: parsedDate,
     );
   }
 

@@ -22,6 +22,40 @@ class DatabaseService implements DatabaseServiceInterface {
 
   static void init() {}
 
+  final List<dynamic> _pendingSaves = [];
+
+  Future<void> _retryPendingSaves() async {
+    final pending = List<dynamic>.from(_pendingSaves);
+    _pendingSaves.clear();
+    for (final item in pending) {
+      if (item is DailyIncome) {
+        final alreadyLoaded = _incomes.any((i) => i.id == item.id);
+        final ok = await FirebaseService.saveIncome(item);
+        if (!ok) {
+          _pendingSaves.add(item);
+        } else if (!alreadyLoaded) {
+          _incomes.add(item);
+        }
+      } else if (item is Expense) {
+        final alreadyLoaded = _expenses.any((e) => e.id == item.id);
+        final ok = await FirebaseService.saveExpense(item);
+        if (!ok) {
+          _pendingSaves.add(item);
+        } else if (!alreadyLoaded) {
+          _expenses.add(item);
+        }
+      } else if (item is AppNotification) {
+        final alreadyLoaded = _notifications.any((n) => n.id == item.id);
+        final ok = await FirebaseService.saveNotification(item);
+        if (!ok) {
+          _pendingSaves.add(item);
+        } else if (!alreadyLoaded) {
+          _notifications.add(item);
+        }
+      }
+    }
+  }
+
   @override
   Future<void> resetForNewUser() async {
     _incomes.clear();
@@ -51,7 +85,10 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<void> insertIncome(DailyIncome income) async {
     _incomes.removeWhere((i) => i.id == income.id);
     _incomes.add(income);
-    await FirebaseService.saveIncome(income);
+    final saved = await FirebaseService.saveIncome(income);
+    if (!saved) {
+      _pendingSaves.add(income);
+    }
   }
 
   @override
@@ -75,6 +112,7 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalIncomeByMonth(int month, int year) async {
     double total = 0;
     for (final i in await getIncomesByMonth(month, year)) {
+      if (i.type == 'cajero') continue;
       total += i.totalAmount;
     }
     return total;
@@ -84,6 +122,7 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getIncomesByDateRange(DateTime from, DateTime to) async {
     double total = 0;
     for (final i in _incomes) {
+      if (i.type == 'cajero') continue;
       if (i.date.isAfter(from.subtract(const Duration(days: 1))) &&
           i.date.isBefore(to.add(const Duration(days: 1)))) {
         total += i.totalAmount;
@@ -117,7 +156,10 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<void> insertExpense(Expense expense) async {
     _expenses.removeWhere((e) => e.id == expense.id);
     _expenses.add(expense);
-    await FirebaseService.saveExpense(expense);
+    final saved = await FirebaseService.saveExpense(expense);
+    if (!saved) {
+      _pendingSaves.add(expense);
+    }
   }
 
   @override
@@ -142,6 +184,7 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final e in await getExpensesByMonth(month, year)) {
       if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
       total += e.amount;
     }
     return total;
@@ -151,6 +194,8 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getExpensesByDateRange(DateTime from, DateTime to) async {
     double total = 0;
     for (final e in _expenses) {
+      if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
       if (e.date.isAfter(from.subtract(const Duration(days: 1))) &&
           e.date.isBefore(to.add(const Duration(days: 1)))) {
         total += e.amount;
@@ -256,10 +301,12 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalBalance() async {
     double income = 0;
     for (final i in _incomes) {
+      if (i.isCashTransfer) continue;
       income += i.totalAmount;
     }
     double expenses = 0;
     for (final e in _expenses) {
+      if (e.isCashTransfer) continue;
       expenses += e.amount;
     }
     return income - expenses;
@@ -278,6 +325,7 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalCashIncome() async {
     double total = 0;
     for (final i in _incomes) {
+      if (i.isCashTransfer) continue;
       if (i.isCash) total += i.totalAmount;
     }
     return total;
@@ -297,6 +345,7 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalBankIncome() async {
     double total = 0;
     for (final i in _incomes) {
+      if (i.isCashTransfer) continue;
       if (!i.isCash) total += i.totalAmount;
     }
     return total;
@@ -316,6 +365,7 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getCashIncomeByMonth(int month, int year) async {
     double total = 0;
     for (final i in await getIncomesByMonth(month, year)) {
+      if (i.isCashTransfer) continue;
       if (i.isCash) total += i.totalAmount;
     }
     return total;
@@ -326,6 +376,7 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final e in await getExpensesByMonth(month, year)) {
       if (e.isTransfer) continue;
+      if (e.isCashTransfer) continue;
       if (e.isCash) total += e.amount;
     }
     return total;
@@ -338,7 +389,10 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<void> insertNotification(AppNotification notification) async {
     _notifications.removeWhere((n) => n.id == notification.id);
     _notifications.add(notification);
-    await FirebaseService.saveNotification(notification);
+    final saved = await FirebaseService.saveNotification(notification);
+    if (!saved) {
+      _pendingSaves.add(notification);
+    }
   }
 
   @override
@@ -357,7 +411,10 @@ class DatabaseService implements DatabaseServiceInterface {
     final idx = _notifications.indexWhere((n) => n.id == id);
     if (idx >= 0) {
       _notifications[idx] = _notifications[idx].copyWith(isRead: true);
-      await FirebaseService.saveNotification(_notifications[idx]);
+      final saved = await FirebaseService.saveNotification(_notifications[idx]);
+      if (!saved) {
+        _pendingSaves.add(_notifications[idx]);
+      }
     }
   }
 
@@ -365,7 +422,10 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<void> markAllNotificationsAsRead() async {
     for (int i = 0; i < _notifications.length; i++) {
       _notifications[i] = _notifications[i].copyWith(isRead: true);
-      await FirebaseService.saveNotification(_notifications[i]);
+      final saved = await FirebaseService.saveNotification(_notifications[i]);
+      if (!saved) {
+        _pendingSaves.add(_notifications[i]);
+      }
     }
   }
 
@@ -373,6 +433,12 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<void> deleteNotification(String id) async {
     _notifications.removeWhere((n) => n.id == id);
     await FirebaseService.deleteNotification(id);
+  }
+
+  @override
+  Future<void> deleteAllNotifications() async {
+    _notifications.clear();
+    await FirebaseService.deleteAllNotifications();
   }
 
   // === PRODUCTS ===
@@ -823,6 +889,13 @@ class DatabaseService implements DatabaseServiceInterface {
       await autoGenerateRecurring();
       await autoRedistributeIfNeeded();
     } catch (_) {}
+
+    // Retry any pending saves that failed earlier
+    if (_pendingSaves.isNotEmpty) {
+      try {
+        await _retryPendingSaves();
+      } catch (_) {}
+    }
   }
 
   Future<void> autoRedistributeIfNeeded() async {
@@ -980,6 +1053,7 @@ class DatabaseService implements DatabaseServiceInterface {
           type: income.type,
           isRecurring: true,
           recurringName: income.recurringName,
+          isCash: income.isCash,
         );
         await insertIncome(newIncome);
       }
@@ -1004,6 +1078,7 @@ class DatabaseService implements DatabaseServiceInterface {
           description: expense.description,
           isRecurring: true,
           recurringName: expense.recurringName,
+          isCash: expense.isCash,
         );
         await insertExpense(newExpense);
       }

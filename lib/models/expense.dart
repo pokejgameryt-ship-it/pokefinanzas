@@ -26,6 +26,7 @@ class Expense {
   });
 
   bool get isTransfer => category == 'Transferencia';
+  bool get isCashTransfer => category == 'Cajero';
 
   Map<String, dynamic> toMap() {
     return {
@@ -44,17 +45,24 @@ class Expense {
   }
 
   factory Expense.fromMap(Map<String, dynamic> map) {
+    final dateStr = map['date']?.toString() ?? '';
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(dateStr);
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
     return Expense(
-      id: map['id'],
-      amount: map['amount'],
-      category: map['category'],
-      subcategory: map['subcategory'] ?? '',
-      date: DateTime.parse(map['date']),
-      description: map['description'],
-      isRecurring: map['isRecurring'] == 1,
-      recurringName: map['recurringName'],
-      transferTo: map['transferTo'],
-      isCash: map['isCash'] == 1,
+      id: map['id']?.toString() ?? '',
+      amount: (map['amount'] as num?)?.toDouble() ?? 0,
+      category: map['category']?.toString() ?? '',
+      subcategory: map['subcategory']?.toString() ?? '',
+      date: parsedDate,
+      description: map['description']?.toString(),
+      isRecurring: map['isRecurring'] == 1 || map['isRecurring'] == true,
+      recurringName: map['recurringName']?.toString(),
+      transferTo: map['transferTo']?.toString(),
+      isCash: map['isCash'] == 1 || map['isCash'] == true,
       tags: (map['tags'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? [],
     );
   }

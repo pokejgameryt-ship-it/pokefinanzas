@@ -29,7 +29,7 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Ingresos / Gastos',
-                description: 'Total de ingresos y gastos del mes actual con número de registros.',
+                description: 'Total de ingresos y gastos del mes actual con desglose por efectivo/banco.',
               ),
               _HelpItem(
                 title: 'Ahorro',
@@ -37,11 +37,11 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Meta Activa',
-                description: 'Si tienes una meta activa, se muestra su progreso con barra porcentual.',
+                description: 'Si tienes una meta activa, se muestra su progreso con barra porcentual y proximo pago.',
               ),
               _HelpItem(
-                title: 'Actividad Reciente',
-                description: 'Resumen rápido de ingresos y gastos del mes.',
+                title: 'Pagos Pendientes',
+                description: 'Muestra los pagos proximos de metas con plan de pagos fijos.',
               ),
             ],
           ),
@@ -54,15 +54,27 @@ class HelpScreen extends StatelessWidget {
             items: [
               _HelpItem(
                 title: 'Lista unificada',
-                description: 'Todos tus ingresos y gastos en una sola vista, ordenados por fecha.',
+                description: 'Todos tus ingresos y gastos en una sola vista, ordenados por fecha. Sin filtro de mes.',
               ),
               _HelpItem(
-                title: 'Buscador',
-                description: 'Filtra movimientos por nombre, descripción o cantidad.',
+                title: 'Buscador global',
+                description: 'Busca por nombre, descripcion, categoria o etiquetas.',
               ),
               _HelpItem(
                 title: 'Filtros',
-                description: 'Filtra por tipo (ingresos/gastos) y por categoría.',
+                description: 'Filtra por tipo (ingresos/gastos), por categoria y por efectivo/banco.',
+              ),
+              _HelpItem(
+                title: 'Etiquetas (Tags)',
+                description: 'Aniade etiquetas a tus gastos para organizarlos mejor. Se muestran como chips en la tarjeta.',
+              ),
+              _HelpItem(
+                title: 'Categorias personalizadas',
+                description: 'Crea tus propias categorias con icono y color. Puedes reordenarlas o desactivarlas.',
+              ),
+              _HelpItem(
+                title: 'Efectivo / Banco',
+                description: 'Indica si un ingreso o gasto es en efectivo o banco. Se muestra el desglose en las tarjetas.',
               ),
               _HelpItem(
                 title: 'Añadir movimiento',
@@ -71,10 +83,6 @@ class HelpScreen extends StatelessWidget {
               _HelpItem(
                 title: 'Editar / Eliminar',
                 description: 'Toca un movimiento para editarlo. Desliza hacia la izquierda para eliminarlo.',
-              ),
-              _HelpItem(
-                title: 'Transferencia',
-                description: 'Categoría especial para simular movimientos entre cuentas (ej: de Comida a Ahorro). No afecta al presupuesto.',
               ),
               _HelpItem(
                 title: 'Importar CSV',
@@ -96,6 +104,10 @@ class HelpScreen extends StatelessWidget {
               _HelpItem(
                 title: 'Comparativa Mensual',
                 description: 'Compara el mes actual con el anterior: ingresos, gastos, ahorro y balance.',
+              ),
+              _HelpItem(
+                title: 'Desglose Efectivo/Banco',
+                description: 'Resumen de movimientos por tipo de cuenta en ingresos y gastos.',
               ),
               _HelpItem(
                 title: 'Gráfico de barras',
@@ -136,11 +148,19 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Ingreso mensual',
-                description: 'Es la base para calcular los porcentajes. Edítalo tocando el lápiz.',
+                description: 'Es el ingreso del mes anterior. Se usa como base para calcular los porcentajes.',
               ),
               _HelpItem(
                 title: 'Redistribución',
-                description: 'El dinero no gastado de una categoría se reparte entre otras. Configura los porcentajes tocando cada categoría.',
+                description: 'El dinero no gastado de una categoría se reparte entre otras. Se ejecuta al abrir la app.',
+              ),
+              _HelpItem(
+                title: 'Bloqueo automático',
+                description: 'Si los gastos fijos superan el ingreso O el gasto total supera el ingreso, la redistribución se desactiva.',
+              ),
+              _HelpItem(
+                title: 'Tope de redistribución',
+                description: 'La redistribución nunca supera el ahorro neto (ingreso - gasto total). Se reparte proporcionalmente.',
               ),
               _HelpItem(
                 title: 'Toggle "Redistribuir"',
@@ -152,15 +172,11 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Presets',
-                description: 'Guarda y carga configuraciones de redistribución. Los presets generales aplican a todas las categorías.',
+                description: 'Guarda y carga configuraciones de redistribución. Puedes eliminar presets desde la pantalla de presets o al cargar.',
               ),
               _HelpItem(
                 title: 'Vista semanal',
-                description: ' Divide el presupuesto mensual entre 4.3 para ver la asignación semanal.',
-              ),
-              _HelpItem(
-                title: 'Bloqueo automático',
-                description: 'Si los gastos fijos superan el ingreso, la redistribución se desactiva automáticamente.',
+                description: 'Divide el presupuesto mensual entre 4.3 para ver la asignación semanal.',
               ),
             ],
           ),
@@ -208,6 +224,14 @@ class HelpScreen extends StatelessWidget {
                 title: 'Progreso',
                 description: 'Añade dinero a tu meta y sigue el progreso con la barra porcentual.',
               ),
+              _HelpItem(
+                title: 'Plan de pagos fijos',
+                description: 'Configura un pago fijo periodico (diario, semanal, mensual, trimestral, anual). La app calcula el proximo pago automaticamente.',
+              ),
+              _HelpItem(
+                title: 'Recordatorios de pago',
+                description: 'Recibe una notificacion 2 dias antes de que se cobre un pago fijo de una meta.',
+              ),
             ],
           ),
           const SizedBox(height: 8),
@@ -231,28 +255,86 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Recordatorios de pago',
-                description: 'Notificación 2 días antes de que se cobre un gasto recurrente.',
+                description: 'Notificación 2 días antes de que se cobre un gasto recurrente o pago fijo de meta.',
+              ),
+              _HelpItem(
+                title: 'Configuracion',
+                description: 'Puedes activar o desactivar cada tipo de notificacion individualmente en Ajustes > Notificaciones.',
+              ),
+              _HelpItem(
+                title: 'Notificaciones Push (Web)',
+                description: 'En el navegador, activa las notificaciones push para recibir alertas aunque no tengas la pestana abierta. Ve a Ajustes > Notificaciones para activarlas.',
               ),
             ],
           ),
           const SizedBox(height: 8),
 
           _HelpSection(
-            icon: Icons.swap_horiz,
-            title: 'Transferencias',
-            color: const Color(0xFF00BCD4),
+            icon: Icons.category,
+            title: 'Categorias',
+            color: const Color(0xFF795548),
             items: [
               _HelpItem(
-                title: 'Simular movimientos entre cuentas',
-                description: 'Usa la categoría "Transferencia" en gastos para mover dinero entre categorías.',
+                title: 'Categorias por defecto',
+                description: 'La app viene con categorias predeterminadas. Se cargan la primera vez que inicias sesion.',
               ),
               _HelpItem(
-                title: 'No afecta presupuesto',
-                description: 'Las transferencias no se cuentan como gasto real ni en stats ni en distribución.',
+                title: 'Crear categoria',
+                description: 'Pulsa "+" para crear una categoria con nombre, icono (36 opciones) y color (20 opciones).',
               ),
               _HelpItem(
-                title: 'Destino',
-                description: 'Al crear una transferencia, selecciona la categoría destino.',
+                title: 'Reordenar',
+                description: 'Mantén pulsado y arrastra para cambiar el orden de las categorias.',
+              ),
+              _HelpItem(
+                title: 'Activar / Desactivar',
+                description: 'Puedes ocultar categorias sin eliminarlas usando el toggle.',
+              ),
+              _HelpItem(
+                title: 'Eliminar',
+                description: 'Borra una categoria personalizada. Las categorias por defecto no se pueden eliminar.',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          _HelpSection(
+            icon: Icons.label,
+            title: 'Etiquetas',
+            color: const Color(0xFF009688),
+            items: [
+              _HelpItem(
+                title: 'Aniadir etiquetas',
+                description: 'Al crear o editar un gasto, escribe etiquetas separadas por coma o pulsa Enter.',
+              ),
+              _HelpItem(
+                title: 'Buscar por etiqueta',
+                description: 'Usa el buscador de movimientos para filtrar por etiqueta.',
+              ),
+              _HelpItem(
+                title: 'Visualizacion',
+                description: 'Las etiquetas se muestran como chips en la tarjeta del movimiento (maximo 3 + "+N").',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          _HelpSection(
+            icon: Icons.description,
+            title: 'Informes PDF',
+            color: const Color(0xFF3F51B5),
+            items: [
+              _HelpItem(
+                title: 'Generar informe',
+                description: 'Crea un PDF con el resumen del mes: ingresos, gastos, ahorro y balance.',
+              ),
+              _HelpItem(
+                title: 'Graficos',
+                description: 'Incluye graficos de lineas con evolucion de balances y gastos por categoria.',
+              ),
+              _HelpItem(
+                title: 'Formato',
+                description: 'Tema claro, valores exactos con 2 decimales, fechas en formato DDMMAAAA.',
               ),
             ],
           ),
@@ -269,15 +351,48 @@ class HelpScreen extends StatelessWidget {
               ),
               _HelpItem(
                 title: 'Moneda',
-                description: 'Selecciona entre EUR, USD o GBP.',
-              ),
-              _HelpItem(
-                title: 'Caché',
-                description: 'Los datos se guardan localmente para funcionar sin conexión.',
+                description: 'Selecciona entre EUR, USD o GBP con simbolo y decimales automaticos.',
               ),
               _HelpItem(
                 title: 'Eliminar datos',
                 description: 'Borra todos tus datos permanentemente.',
+              ),
+              _HelpItem(
+                title: 'Cuenta',
+                description: 'Cierra sesion o elimina tu cuenta.',
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          _HelpSection(
+            icon: Icons.phone_android,
+            title: 'Aplicacion',
+            color: const Color(0xFF3DDC84),
+            items: [
+              _HelpItem(
+                title: 'Buscar actualizaciones',
+                description: 'Comprueba si hay una nueva version disponible en Firebase.',
+              ),
+              _HelpItem(
+                title: 'Actualizacion automatica (APK)',
+                description: 'Al abrir la app, si hay nueva version, puedes descargarla e instalarla directamente desde la app.',
+              ),
+              _HelpItem(
+                title: 'Descargar APK',
+                description: 'Descarga la ultima version de Android desde GitHub.',
+              ),
+              _HelpItem(
+                title: 'Abrir version web',
+                description: 'Abre la app en el navegador.',
+              ),
+              _HelpItem(
+                title: 'Codigo fuente',
+                description: 'Accede al repositorio de GitHub.',
+              ),
+              _HelpItem(
+                title: 'Reinstalar acceso directo (Web)',
+                description: 'Si el acceso directo de la PWA no funciona, eliminaalo y vuelve a aniadirlo desde el navegador.',
               ),
             ],
           ),

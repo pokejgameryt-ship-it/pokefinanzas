@@ -36,13 +36,13 @@ class CategoryModel {
 
   factory CategoryModel.fromMap(Map<String, dynamic> map) {
     return CategoryModel(
-      id: map['id'] ?? '',
-      name: map['name'] ?? '',
-      iconCodePoint: map['iconCodePoint'] ?? Icons.category.codePoint,
-      colorValue: map['colorValue'] ?? Colors.grey.value,
-      isDefault: map['isDefault'] == 1,
-      isEnabled: map['isEnabled'] != 0,
-      order: map['order'] ?? 0,
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      iconCodePoint: (map['iconCodePoint'] as num?)?.toInt() ?? Icons.category.codePoint,
+      colorValue: (map['colorValue'] as num?)?.toInt() ?? Colors.grey.value,
+      isDefault: map['isDefault'] == 1 || map['isDefault'] == true,
+      isEnabled: map['isEnabled'] != 0 && map['isEnabled'] != false,
+      order: (map['order'] as num?)?.toInt() ?? 0,
     );
   }
 

@@ -27,12 +27,16 @@ class FirebaseService {
 
   // === SAVING (write-through to Firebase) ===
 
-  static Future<void> saveIncome(DailyIncome income) async {
-    if (_userId == null) return;
+  static Future<bool> saveIncome(DailyIncome income) async {
+    if (_userId == null) return false;
     try {
       final url = Uri.parse('$_baseUrl/${_userPath()}/incomes/${income.id}.json?auth=$_token');
-      await http.put(url, body: jsonEncode(income.toMap())).timeout(_timeout);
-    } catch (_) {}
+      final response = await http.put(url, body: jsonEncode(income.toMap())).timeout(_timeout);
+      if (response.statusCode != 200) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> deleteIncome(String incomeId) async {
@@ -43,12 +47,16 @@ class FirebaseService {
     } catch (_) {}
   }
 
-  static Future<void> saveExpense(Expense expense) async {
-    if (_userId == null) return;
+  static Future<bool> saveExpense(Expense expense) async {
+    if (_userId == null) return false;
     try {
       final url = Uri.parse('$_baseUrl/${_userPath()}/expenses/${expense.id}.json?auth=$_token');
-      await http.put(url, body: jsonEncode(expense.toMap())).timeout(_timeout);
-    } catch (_) {}
+      final response = await http.put(url, body: jsonEncode(expense.toMap())).timeout(_timeout);
+      if (response.statusCode != 200) return false;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> deleteExpense(String expenseId) async {
@@ -100,9 +108,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => ProductGroup.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<ProductGroup> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(ProductGroup.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -142,18 +154,29 @@ class FirebaseService {
     } catch (_) {}
   }
 
-  static Future<void> saveNotification(AppNotification notif) async {
-    if (_userId == null) return;
+  static Future<bool> saveNotification(AppNotification notif) async {
+    if (_userId == null) return false;
     try {
       final url = Uri.parse('$_baseUrl/${_userPath()}/notifications/${notif.id}.json?auth=$_token');
-      await http.put(url, body: jsonEncode(notif.toMap())).timeout(_timeout);
-    } catch (_) {}
+      final response = await http.put(url, body: jsonEncode(notif.toMap())).timeout(_timeout);
+      return response.statusCode == 200;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<void> deleteNotification(String notifId) async {
     if (_userId == null) return;
     try {
       final url = Uri.parse('$_baseUrl/${_userPath()}/notifications/$notifId.json?auth=$_token');
+      await http.delete(url).timeout(_timeout);
+    } catch (_) {}
+  }
+
+  static Future<void> deleteAllNotifications() async {
+    if (_userId == null) return;
+    try {
+      final url = Uri.parse('$_baseUrl/${_userPath()}/notifications.json?auth=$_token');
       await http.delete(url).timeout(_timeout);
     } catch (_) {}
   }
@@ -167,9 +190,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => DailyIncome.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<DailyIncome> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(DailyIncome.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -182,9 +209,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => Expense.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<Expense> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(Expense.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -197,9 +228,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => Product.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<Product> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(Product.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -212,9 +247,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => Goal.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<Goal> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(Goal.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -227,15 +266,19 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values.map((v) {
-          final map = v as Map<String, dynamic>;
-          if (map['categories'] is List) {
-            map['categories'] = (map['categories'] as List)
-                .map((c) => (c as Map<String, dynamic>))
-                .toList();
-          }
-          return SavingsDistribution.fromMap(map);
-        }).toList();
+        final List<SavingsDistribution> result = [];
+        for (final v in data.values) {
+          try {
+            final map = v as Map<String, dynamic>;
+            if (map['categories'] is List) {
+              map['categories'] = (map['categories'] as List)
+                  .map((c) => (c as Map<String, dynamic>))
+                  .toList();
+            }
+            result.add(SavingsDistribution.fromMap(map));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -248,9 +291,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => AppNotification.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<AppNotification> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(AppNotification.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -283,9 +330,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => Budget.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<Budget> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(Budget.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -316,9 +367,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => Subcategory.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<Subcategory> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(Subcategory.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -381,7 +436,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.map((k, v) => MapEntry(k, RedistributionConfig.fromMap(v as Map<String, dynamic>)));
+        final Map<String, RedistributionConfig> result = {};
+        for (final entry in data.entries) {
+          try {
+            result[entry.key] = RedistributionConfig.fromMap(entry.value as Map<String, dynamic>);
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return {};
@@ -412,7 +473,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values.map((v) => RedistributionPreset.fromMap(v as Map<String, dynamic>)).toList();
+        final List<RedistributionPreset> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(RedistributionPreset.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];
@@ -451,9 +518,13 @@ class FirebaseService {
       final response = await http.get(url).timeout(_timeout);
       if (response.statusCode == 200 && response.body != 'null') {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
-        return data.values
-            .map((v) => CategoryModel.fromMap(v as Map<String, dynamic>))
-            .toList();
+        final List<CategoryModel> result = [];
+        for (final v in data.values) {
+          try {
+            result.add(CategoryModel.fromMap(v as Map<String, dynamic>));
+          } catch (_) {}
+        }
+        return result;
       }
     } catch (_) {}
     return [];

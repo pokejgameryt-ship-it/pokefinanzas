@@ -28,12 +28,20 @@ class _StatsScreenState extends State<StatsScreen> {
   double _bankIncome = 0;
   double _bankExpenses = 0;
   double _currentSavings = 0;
+  double _ahorroSpent = 0;
   double _totalSavings = 0;
   double _prevIncome = 0;
   double _prevExpenses = 0;
   double _prevSavings = 0;
+  double _globalTotalIncome = 0;
+  double _globalTotalExpenses = 0;
+  double _globalCashIncome = 0;
+  double _globalCashExpense = 0;
+  double _globalBankIncome = 0;
+  double _globalBankExpense = 0;
   Map<String, double> _expensesByCategory = {};
   Map<String, Map<String, double>> _expensesBySubcategory = {};
+  List<String> _activeCategoryNames = [];
   List<MapEntry<DateTime, double>> _monthlyIncome = [];
   List<MapEntry<DateTime, double>> _monthlyExpenses = [];
   List<MapEntry<DateTime, double>> _monthlySavingsChart = [];
@@ -43,16 +51,36 @@ class _StatsScreenState extends State<StatsScreen> {
   bool _showBarChart = true;
   bool _showDistValues = true;
 
-  static const Map<String, Color> _categoryColors = {
-    'Alquiler': Color(0xFFE53935),
-    'Comida': Color(0xFFFF9800),
-    'Transporte': Color(0xFF2196F3),
-    'Servicios': Color(0xFFFFC107),
-    'Ocio': Color(0xFF9C27B0),
-    'Salud': Color(0xFF4CAF50),
-    'Ropa': Color(0xFF795548),
-    'Otros': Color(0xFF607D8B),
-  };
+  static final Map<String, Color> _categoryColors = {};
+  static final List<Color> _palette = [
+    const Color(0xFFE53935),
+    const Color(0xFFFF9800),
+    const Color(0xFF2196F3),
+    const Color(0xFFFFC107),
+    const Color(0xFF9C27B0),
+    const Color(0xFF4CAF50),
+    const Color(0xFF795548),
+    const Color(0xFF607D8B),
+    const Color(0xFF00BCD4),
+    const Color(0xFFE91E63),
+    const Color(0xFF3F51B5),
+    const Color(0xFF8BC34A),
+    const Color(0xFFFF5722),
+    const Color(0xFF009688),
+    const Color(0xFF673AB7),
+    const Color(0xFFCDDC39),
+    const Color(0xFF03A9F4),
+    const Color(0xFFFF4081),
+    const Color(0xFF7C4DFF),
+    const Color(0xFF26A69A),
+  ];
+
+  static Color _getCategoryColor(String name) {
+    if (_categoryColors.containsKey(name)) return _categoryColors[name]!;
+    final color = _palette[_categoryColors.length % _palette.length];
+    _categoryColors[name] = color;
+    return color;
+  }
 
   @override
   void initState() {
@@ -106,10 +134,13 @@ class _StatsScreenState extends State<StatsScreen> {
         totalIncome = 0;
         totalExpenses = 0;
         for (final i in await _db.getAllIncomes()) {
+          if (i.type == 'cajero') continue;
           totalIncome += i.totalAmount;
         }
         for (final e in await _db.getAllExpenses()) {
-          if (!e.isTransfer) totalExpenses += e.amount;
+          if (e.isTransfer) continue;
+          if (e.category == 'Cajero') continue;
+          totalExpenses += e.amount;
         }
         expenses = await _db.getExpensesByMonth(now.month, now.year);
         incomes = await _db.getIncomesByMonth(now.month, now.year);
@@ -136,11 +167,34 @@ class _StatsScreenState extends State<StatsScreen> {
     final prevSavings = previousDist?.savings ?? 0;
     final totalSavings = await _db.getTotalSavings();
 
-    // Gastos por categoría (exclude transfers)
+    // Global all-time data
+    final globalCashIncome = await _db.getTotalCashIncome();
+    final globalCashExpense = await _db.getTotalCashExpense();
+    final globalBankIncome = await _db.getTotalBankIncome();
+    final globalBankExpense = await _db.getTotalBankExpense();
+    double globalTotalIncome = 0;
+    double globalTotalExpenses = 0;
+    for (final i in await _db.getAllIncomes()) {
+      if (i.type == 'cajero') continue;
+      globalTotalIncome += i.totalAmount;
+    }
+    for (final e in await _db.getAllExpenses()) {
+      if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
+      globalTotalExpenses += e.amount;
+    }
+
+    // Gastos por categoría (exclude transfers and Cajero)
     final Map<String, double> byCategory = {};
     final Map<String, Map<String, double>> bySubcategory = {};
+    double ahorroSpent = 0;
     for (final e in expenses) {
       if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
+      if (e.category == 'Ahorro') {
+        ahorroSpent += e.amount;
+        continue;
+      }
       byCategory[e.category] = (byCategory[e.category] ?? 0) + e.amount;
       if (e.subcategory.isNotEmpty) {
         bySubcategory.putIfAbsent(e.category, () => {});
@@ -164,14 +218,29 @@ class _StatsScreenState extends State<StatsScreen> {
       monthlySavingsData.add(MapEntry(month, dist?.savings ?? 0));
     }
 
-    // Cash/Bank split for the period
+    // Cash/Bank split for the period (exclude ATM transfers)
     double cashInc = 0, cashExp = 0, bankInc = 0, bankExp = 0;
     for (final e in expenses) {
       if (e.isTransfer) continue;
+      if (e.isCashTransfer) continue;
       if (e.isCash) cashExp += e.amount; else bankExp += e.amount;
     }
     for (final inc in incomes) {
+      if (inc.isCashTransfer) continue;
       if (inc.isCash) cashInc += inc.totalAmount; else bankInc += inc.totalAmount;
+    }
+
+    // Active categories from distribution + Ahorro
+    final List<String> activeCategoryNames = [];
+    if (currentDist != null) {
+      for (final cat in currentDist.userCategories) {
+        if (!activeCategoryNames.contains(cat.name)) {
+          activeCategoryNames.add(cat.name);
+        }
+      }
+    }
+    if (!activeCategoryNames.contains('Ahorro')) {
+      activeCategoryNames.add('Ahorro');
     }
 
     setState(() {
@@ -184,6 +253,8 @@ class _StatsScreenState extends State<StatsScreen> {
       _prevSavings = prevSavings;
       _expensesByCategory = byCategory;
       _expensesBySubcategory = bySubcategory;
+      _ahorroSpent = ahorroSpent;
+      _activeCategoryNames = activeCategoryNames;
       _monthlyIncome = monthlyIncome;
       _monthlyExpenses = monthlyExpenses;
       _monthlySavingsChart = monthlySavingsData;
@@ -192,6 +263,12 @@ class _StatsScreenState extends State<StatsScreen> {
       _cashExpenses = cashExp;
       _bankIncome = bankInc;
       _bankExpenses = bankExp;
+      _globalTotalIncome = globalTotalIncome;
+      _globalTotalExpenses = globalTotalExpenses;
+      _globalCashIncome = globalCashIncome;
+      _globalCashExpense = globalCashExpense;
+      _globalBankIncome = globalBankIncome;
+      _globalBankExpense = globalBankExpense;
       _isLoading = false;
     });
   }
@@ -340,9 +417,57 @@ class _StatsScreenState extends State<StatsScreen> {
                               Expanded(
                                 child: _SummaryItem(
                                   label: 'Ahorro',
-                                  amount: _currentSavings,
+                                  amount: _ahorroSpent,
                                   color: const Color(0xFF4CAF50),
                                   icon: Icons.savings,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Global balance card (all-time)
+                  Card(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Balance global',
+                            style: Theme.of(context).textTheme.titleMedium,
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _SummaryItem(
+                                  label: 'Global',
+                                  amount: _globalTotalIncome - _globalTotalExpenses,
+                                  color: colorScheme.primary,
+                                  icon: Icons.account_balance_wallet,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: _SummaryItem(
+                                  label: 'Banco',
+                                  amount: _globalBankIncome - _globalBankExpense,
+                                  color: Colors.blue,
+                                  icon: Icons.account_balance_rounded,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: _SummaryItem(
+                                  label: 'Efectivo',
+                                  amount: _globalCashIncome - _globalCashExpense,
+                                  color: Colors.orange,
+                                  icon: Icons.money_rounded,
                                 ),
                               ),
                             ],
@@ -473,16 +598,19 @@ class _StatsScreenState extends State<StatsScreen> {
                   ],
 
                   // Expense pie chart
-                  if (_expensesByCategory.isNotEmpty) ...[
+                  if (_expensesByCategory.isNotEmpty || _activeCategoryNames.isNotEmpty) ...[
                     Text('Gastos por Categoría',
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
-                    SizedBox(height: 200, child: _buildPieChart(colorScheme)),
+                    if (_expensesByCategory.isNotEmpty)
+                      SizedBox(height: 200, child: _buildPieChart(colorScheme)),
                     const SizedBox(height: 12),
-                    ..._expensesByCategory.entries.map((entry) {
-                      final color = _categoryColors[entry.key] ?? Colors.grey;
-                      final pct = _totalExpenses > 0 ? entry.value / _totalExpenses * 100 : 0.0;
-                      final subcats = _expensesBySubcategory[entry.key];
+                    ..._activeCategoryNames.map((catName) {
+                      final spent = _expensesByCategory[catName] ?? 0.0;
+                      final totalCharted = _expensesByCategory.values.fold<double>(0, (a, b) => a + b);
+                      final pct = totalCharted > 0 ? spent / totalCharted * 100 : 0.0;
+                      final color = _getCategoryColor(catName);
+                      final subcats = _expensesBySubcategory[catName];
                       return Padding(
                         padding: const EdgeInsets.symmetric(vertical: 3),
                         child: Column(
@@ -493,17 +621,17 @@ class _StatsScreenState extends State<StatsScreen> {
                                 Container(width: 14, height: 14,
                                     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
                                 const SizedBox(width: 8),
-                                Expanded(child: Text(entry.key, style: const TextStyle(fontSize: 13))),
-                                Text(Formatters.formatCurrency(entry.value),
+                                Expanded(child: Text(catName, style: const TextStyle(fontSize: 13))),
+                                Text(Formatters.formatCurrency(spent),
                                     style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 13)),
                                 const SizedBox(width: 6),
-                                Text('${pct.toStringAsFixed(1)}%',
+                                Text(spent > 0 ? '${pct.toStringAsFixed(1)}%' : '',
                                     style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 11)),
                               ],
                             ),
                             if (subcats != null && subcats.isNotEmpty)
                               ...subcats.entries.map((sub) {
-                                final subPct = entry.value > 0 ? sub.value / entry.value * 100 : 0.0;
+                                final subPct = spent > 0 ? sub.value / spent * 100 : 0.0;
                                 return Padding(
                                   padding: const EdgeInsets.only(left: 22, top: 1),
                                   child: Row(
@@ -763,14 +891,15 @@ class _StatsScreenState extends State<StatsScreen> {
   Widget _buildPieChart(ColorScheme colorScheme) {
     if (_expensesByCategory.isEmpty) return const SizedBox();
 
+    final totalCharted = _expensesByCategory.values.fold<double>(0, (a, b) => a + b);
     final sections = _expensesByCategory.entries.map((entry) {
-      final color = _categoryColors[entry.key] ?? Colors.grey;
+      final color = _getCategoryColor(entry.key);
       return PieChartSectionData(
         value: entry.value,
         color: color,
         title: _showDistValues
             ? Formatters.formatCurrency(entry.value)
-            : '${(entry.value / _totalExpenses * 100).toStringAsFixed(0)}%',
+            : '${totalCharted > 0 ? (entry.value / totalCharted * 100).toStringAsFixed(0) : 0}%',
         titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.white),
         radius: 80,
       );
@@ -804,7 +933,7 @@ class _StatsScreenState extends State<StatsScreen> {
     for (final cat in deduped) {
       final budget = _currentDistribution!.getCategoryBudget(cat);
       if (budget <= 0) continue;
-      final color = _categoryColors[cat.name] ?? _getDistributionColor(cat.name);
+      final color = _getCategoryColor(cat.name);
       sections.add(PieChartSectionData(
         value: budget,
         color: color,
@@ -857,7 +986,7 @@ class _StatsScreenState extends State<StatsScreen> {
       final budget = _currentDistribution!.getCategoryBudget(cat);
       if (budget <= 0) continue;
       final pct = total > 0 ? budget / total * 100 : 0.0;
-      final color = _categoryColors[cat.name] ?? _getDistributionColor(cat.name);
+      final color = _getCategoryColor(cat.name);
       list.add(Padding(
         padding: const EdgeInsets.symmetric(vertical: 3),
         child: Row(
@@ -890,20 +1019,6 @@ class _StatsScreenState extends State<StatsScreen> {
     }
     if (_currentDistribution!.savingsBudget > 0) total += _currentDistribution!.savingsBudget;
     return total;
-  }
-
-  Color _getDistributionColor(String name) {
-    const colors = [
-      Color(0xFF2196F3), Color(0xFFFF9800), Color(0xFF9C27B0),
-      Color(0xFFE53935), Color(0xFF00BCD4), Color(0xFFFF5722),
-      Color(0xFF607D8B), Color(0xFF795548), Color(0xFFCDDC39),
-      Color(0xFF3F51B5),
-    ];
-    int hash = 0;
-    for (int i = 0; i < name.length; i++) {
-      hash = name.codeUnitAt(i) + ((hash << 5) - hash);
-    }
-    return colors[hash.abs() % colors.length];
   }
 
   String _getMonthName(int month) {

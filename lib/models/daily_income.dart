@@ -10,6 +10,8 @@ class DailyIncome {
   final String? recurringName;
   final bool isCash;
 
+  bool get isCashTransfer => type == 'cajero';
+
   DailyIncome({
     required this.id,
     required this.date,
@@ -39,17 +41,24 @@ class DailyIncome {
   }
 
   factory DailyIncome.fromMap(Map<String, dynamic> map) {
+    final dateStr = map['date']?.toString() ?? '';
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(dateStr);
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
     return DailyIncome(
-      id: map['id'],
-      date: DateTime.parse(map['date']),
-      hoursWorked: map['hoursWorked'] ?? 0,
-      hourlyRate: map['hourlyRate'] ?? 0,
-      totalAmount: map['totalAmount'],
-      notes: map['notes'],
-      type: map['type'] ?? 'fixed',
-      isRecurring: map['isRecurring'] == 1,
-      recurringName: map['recurringName'],
-      isCash: map['isCash'] == 1,
+      id: map['id']?.toString() ?? '',
+      date: parsedDate,
+      hoursWorked: (map['hoursWorked'] as num?)?.toDouble() ?? 0,
+      hourlyRate: (map['hourlyRate'] as num?)?.toDouble() ?? 0,
+      totalAmount: (map['totalAmount'] as num?)?.toDouble() ?? 0,
+      notes: map['notes']?.toString(),
+      type: map['type']?.toString() ?? 'fixed',
+      isRecurring: map['isRecurring'] == 1 || map['isRecurring'] == true,
+      recurringName: map['recurringName']?.toString(),
+      isCash: map['isCash'] == 1 || map['isCash'] == true,
     );
   }
 

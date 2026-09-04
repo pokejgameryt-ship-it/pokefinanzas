@@ -26,9 +26,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
   int _expenseCount = 0;
   Goal? _activeGoal;
   SavingsDistribution? _currentDistribution;
-  double _totalSavings = 0;
+  double _totalAhorroSpent = 0;
+  double _monthAhorroSpent = 0;
   double _cashIncome = 0;
   double _cashExpense = 0;
+  double _totalCashIncome = 0;
+  double _totalCashExpense = 0;
+  double _totalBankIncome = 0;
+  double _totalBankExpense = 0;
   bool _isLoading = true;
 
   @override
@@ -64,10 +69,25 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _db.getExpensesByDateRange(startOfWeekDay, now),
         _db.getActiveGoal(),
         _db.getDistribution(now.month, now.year),
-        _db.getTotalSavings(),
         _db.getCashIncomeByMonth(now.month, now.year),
         _db.getCashExpenseByMonth(now.month, now.year),
+        _db.getTotalCashIncome(),
+        _db.getTotalCashExpense(),
+        _db.getTotalBankIncome(),
+        _db.getTotalBankExpense(),
       ]);
+
+      // Ahorro: gasto real en categoría "Ahorro"
+      double totalAhorroSpent = 0;
+      double monthAhorroSpent = 0;
+      for (final e in await _db.getAllExpenses()) {
+        if (e.category == 'Ahorro') {
+          totalAhorroSpent += e.amount;
+          if (e.date.month == now.month && e.date.year == now.year) {
+            monthAhorroSpent += e.amount;
+          }
+        }
+      }
 
       if (mounted) {
         setState(() {
@@ -80,9 +100,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _weeklyExpenses = results[6] as double;
           _activeGoal = results[7] as Goal?;
           _currentDistribution = results[8] as SavingsDistribution?;
-          _totalSavings = results[9] as double;
-          _cashIncome = results[10] as double;
-          _cashExpense = results[11] as double;
+          _cashIncome = results[9] as double;
+          _cashExpense = results[10] as double;
+          _totalCashIncome = results[11] as double;
+          _totalCashExpense = results[12] as double;
+          _totalBankIncome = results[13] as double;
+          _totalBankExpense = results[14] as double;
+          _totalAhorroSpent = totalAhorroSpent;
+          _monthAhorroSpent = monthAhorroSpent;
           _isLoading = false;
         });
       }
@@ -122,32 +147,82 @@ class _DashboardScreenState extends State<DashboardScreen> {
                       color: colorScheme.primary,
                       child: Padding(
                         padding: const EdgeInsets.all(24),
-                        child: Center(
-                          child: Column(
-                            children: [
-                              Text(
-                                'Balance Total',
-                                style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                      color: colorScheme.onPrimary,
-                                    ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'Balance Total',
+                              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                    color: colorScheme.onPrimary,
+                                  ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              Formatters.formatCurrency(_totalBalance),
+                              style: Theme.of(context).textTheme.displaySmall?.copyWith(
+                                    color: colorScheme.onPrimary,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                            ),
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                              decoration: BoxDecoration(
+                                color: colorScheme.onPrimary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(8),
                               ),
-                              const SizedBox(height: 8),
-                              Text(
-                                Formatters.formatCurrency(_totalBalance),
-                                style: Theme.of(context).textTheme.displaySmall?.copyWith(
-                                      color: colorScheme.onPrimary,
-                                      fontWeight: FontWeight.bold,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.account_balance_rounded, color: colorScheme.onPrimary.withValues(alpha: 0.8), size: 18),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Banco',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                                              ),
+                                        ),
+                                        Text(
+                                          Formatters.formatCurrency(_totalBankIncome - _totalBankExpense),
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                color: colorScheme.onPrimary,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                        ),
+                                      ],
                                     ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Todos los tiempos',
-                                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                                      color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                                  ),
+                                  Container(
+                                    width: 1,
+                                    height: 36,
+                                    color: colorScheme.onPrimary.withValues(alpha: 0.3),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        Icon(Icons.money_rounded, color: colorScheme.onPrimary.withValues(alpha: 0.8), size: 18),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Efectivo',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                                              ),
+                                        ),
+                                        Text(
+                                          Formatters.formatCurrency(_totalCashIncome - _totalCashExpense),
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                color: colorScheme.onPrimary,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                        ),
+                                      ],
                                     ),
+                                  ),
+                                ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
                     ),
@@ -233,14 +308,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Expanded(
                                   child: _SavingsStat(
                                     label: 'Total',
-                                    amount: _totalSavings,
+                                    amount: _totalAhorroSpent,
                                     highlight: true,
                                   ),
                                 ),
                                 Expanded(
                                   child: _SavingsStat(
                                     label: 'Este mes',
-                                    amount: _currentDistribution?.savings ?? 0,
+                                    amount: _monthAhorroSpent,
                                   ),
                                 ),
                                 if (_currentDistribution != null)

@@ -25,11 +25,17 @@ class ProductGroup {
   }
 
   factory ProductGroup.fromMap(Map<String, dynamic> map) {
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(map['createdAt']?.toString() ?? '');
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
     return ProductGroup(
-      id: map['id'],
-      name: map['name'],
-      colorValue: map['colorValue'] ?? 0xFF607D8B,
-      createdAt: DateTime.parse(map['createdAt']),
+      id: map['id']?.toString() ?? '',
+      name: map['name']?.toString() ?? '',
+      colorValue: (map['colorValue'] as num?)?.toInt() ?? 0xFF607D8B,
+      createdAt: parsedDate,
     );
   }
 

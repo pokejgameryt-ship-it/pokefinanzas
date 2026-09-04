@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 import '../models/app_notification.dart';
 import '../utils/formatters.dart';
 import 'database_service.dart';
+import 'push_notification_service.dart';
 
 class NotificationService {
   static final NotificationService instance = NotificationService._init();
@@ -10,6 +11,8 @@ class NotificationService {
   final _db = DatabaseService.instance;
 
   Future<void> generateMonthlyReport(int month, int year) async {
+    if (!await PushNotificationService.isEnabled('monthly_report')) return;
+
     final monthNames = [
       '', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'
@@ -56,38 +59,47 @@ class NotificationService {
   }
 
   Future<void> generateWeeklyReport() async {
+    if (!await PushNotificationService.isEnabled('weekly_summary')) return;
+
     final now = DateTime.now();
     final existing = await _db.getAllNotifications();
-    final weekNumber = ((now.day - 1) ~/ 7) + 1;
-    final reportTitle = 'Resumen Semanal - Semana $weekNumber';
+
+    // Usar la semana anterior (lunes a domingo pasados)
+    final startOfCurrentWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final prevWeekEnd = startOfCurrentWeek.subtract(const Duration(days: 1));
+    final prevWeekStart = DateTime(prevWeekEnd.year, prevWeekEnd.month, prevWeekEnd.day).subtract(const Duration(days: 6));
+
+    // Dedup using actual date range instead of fragile week number
+    final dateRangeLabel = '${Formatters.formatDate(prevWeekStart)} - ${Formatters.formatDate(prevWeekEnd)}';
     final alreadyExists = existing.any(
-      (n) => n.type == 'weekly_report' && n.title == reportTitle,
+      (n) => n.type == 'weekly_report' && n.message.startsWith(dateRangeLabel),
     );
     if (alreadyExists) return;
-
-    final weekStart = now.subtract(Duration(days: now.weekday - 1));
-    final weekEnd = weekStart.add(const Duration(days: 6));
 
     double weekIncome = 0;
     double weekExpenses = 0;
     for (int i = 0; i < 7; i++) {
-      final day = weekStart.add(Duration(days: i));
-      if (day.isAfter(now)) break;
+      final day = DateTime(prevWeekStart.year, prevWeekStart.month, prevWeekStart.day + i);
       final dayIncomes = await _db.getIncomesByDate(day);
       for (final inc in dayIncomes) {
+        if (inc.type == 'cajero') continue;
         weekIncome += inc.totalAmount;
       }
       final dayExpenses = await _db.getExpensesByDate(day);
       for (final exp in dayExpenses) {
+        if (exp.category == 'Cajero') continue;
         if (!exp.isTransfer) weekExpenses += exp.amount;
       }
     }
 
+    // Don't create empty reports
+    if (weekIncome == 0 && weekExpenses == 0) return;
+
     final notif = AppNotification(
       id: const Uuid().v4(),
-      title: 'Resumen Semanal - Semana $weekNumber',
+      title: 'Resumen Semanal',
       message:
-          '${Formatters.formatDate(weekStart)} - ${Formatters.formatDate(weekEnd)}\n'
+          '$dateRangeLabel\n'
           'Ingresos: ${Formatters.formatCurrency(weekIncome)} | '
           'Gastos: ${Formatters.formatCurrency(weekExpenses)} | '
           'Balance: ${Formatters.formatCurrency(weekIncome - weekExpenses)}',
@@ -98,6 +110,8 @@ class NotificationService {
   }
 
   Future<void> generateAnnualReport(int year) async {
+    if (!await PushNotificationService.isEnabled('annual_report')) return;
+
     final existing = await _db.getAllNotifications();
     final alreadyExists = existing.any(
       (n) => n.type == 'annual_report' &&
@@ -127,6 +141,8 @@ class NotificationService {
   }
 
   Future<void> generateSavingsAlert(int month, int year) async {
+    if (!await PushNotificationService.isEnabled('savings_goal_reached')) return;
+
     final dist = await _db.getDistribution(month, year);
     if (dist == null) return;
 
@@ -153,6 +169,8 @@ class NotificationService {
 
   Future<void> generateBudgetAlert(
       String categoryName, double spent, double budget) async {
+    if (!await PushNotificationService.isEnabled('budget_exceeded')) return;
+
     final percentage = (spent / budget * 100).toStringAsFixed(0);
 
     final notif = AppNotification(
@@ -169,6 +187,8 @@ class NotificationService {
   Future<void> checkBudgetAlerts(
       double spentAmount, double budgetAmount, String categoryName) async {
     if (budgetAmount <= 0) return;
+    if (!await PushNotificationService.isEnabled('budget_alert') &&
+        !await PushNotificationService.isEnabled('budget_exceeded')) return;
 
     final now = DateTime.now();
     final percentage = spentAmount / budgetAmount * 100;
@@ -217,6 +237,7 @@ class NotificationService {
 
   Future<void> checkSavingsAlert(
       double currentSavings, double targetSavings) async {
+    if (!await PushNotificationService.isEnabled('savings_goal_reached')) return;
     if (targetSavings <= 0) return;
     if (currentSavings < targetSavings) return;
 
@@ -243,6 +264,8 @@ class NotificationService {
   }
 
   Future<void> checkAndGenerateNotifications() async {
+    if (!await PushNotificationService.isMasterEnabled()) return;
+
     final now = DateTime.now();
 
     // Monthly report for the PREVIOUS month (completed month)
@@ -250,10 +273,8 @@ class NotificationService {
     final lastYear = now.month == 1 ? now.year - 1 : now.year;
     await generateMonthlyReport(lastMonth, lastYear);
 
-    // Weekly report (every Monday or first app open of the week)
-    if (now.weekday == DateTime.monday) {
-      await generateWeeklyReport();
-    }
+    // Weekly report for the previous week (any day, dedup by date range)
+    await generateWeeklyReport();
 
     // Annual report for previous year (only in January)
     if (now.month == DateTime.january) {
@@ -262,6 +283,9 @@ class NotificationService {
 
     // Savings alert from previous month
     await generateSavingsAlert(lastMonth, lastYear);
+
+    // Daily reminder
+    await _generateDailyReminder(now);
 
     // Budget exceeded alerts for current month
     final dist = await _db.getDistribution(now.month, now.year);
@@ -278,7 +302,37 @@ class NotificationService {
     await checkRecurringPaymentReminders(now);
   }
 
+  Future<void> _generateDailyReminder(DateTime now) async {
+    if (!await PushNotificationService.isEnabled('daily_reminder')) return;
+
+    final existing = await _db.getAllNotifications();
+    final alreadyExists = existing.any(
+      (n) => n.type == 'daily_reminder' &&
+          n.createdAt.year == now.year &&
+          n.createdAt.month == now.month &&
+          n.createdAt.day == now.day,
+    );
+    if (alreadyExists) return;
+
+    final income = await _db.getTotalIncomeByMonth(now.month, now.year);
+    final expenses = await _db.getTotalExpensesByMonth(now.month, now.year);
+    final remaining = income - expenses;
+
+    final notif = AppNotification(
+      id: const Uuid().v4(),
+      title: 'Recordatorio diario',
+      message: remaining > 0
+          ? 'Llevas ${Formatters.formatCurrency(expenses)} gastados este mes. Te quedan ${Formatters.formatCurrency(remaining)}.'
+          : 'Has gastado ${Formatters.formatCurrency(expenses)} este mes. Cuidado con el presupuesto.',
+      type: 'daily_reminder',
+      createdAt: DateTime.now(),
+    );
+    await _db.insertNotification(notif);
+  }
+
   Future<void> checkRecurringPaymentReminders(DateTime now) async {
+    if (!await PushNotificationService.isEnabled('recurring_payment_due')) return;
+
     final existing = await _db.getAllNotifications();
 
     // Check recurring expenses
