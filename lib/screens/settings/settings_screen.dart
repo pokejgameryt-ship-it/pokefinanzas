@@ -228,6 +228,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 'El día del mes en que se redistribuye el sobrante de cada categoría.',
                 style: TextStyle(fontSize: 13),
               ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Theme.of(ctx).colorScheme.primaryContainer.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Text(
+                  'Al cambiar, se recalcularán los presupuestos basados en los ingresos de los últimos 30 días.',
+                  style: TextStyle(fontSize: 11),
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -261,7 +273,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, tempDay),
-              child: const Text('Guardar'),
+              child: const Text('Guardar y recalcular'),
             ),
           ],
         ),
@@ -269,10 +281,43 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
 
     if (result != null && result != currentDay) {
+      // Show loading
+      if (mounted) {
+        showDialog(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => const Center(child: CircularProgressIndicator()),
+        );
+      }
+
+      // Save the new day
       await db.setGlobalRedistributionDay(result);
+
+      // Recalculate budgets from last 30 days income
+      final now = DateTime.now();
+      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+      final last30DaysIncome = await db.getIncomesByDateRange(thirtyDaysAgo, now);
+
+      // Get current distribution
+      final currentDist = await db.getDistribution(now.month, now.year);
+      if (currentDist != null && last30DaysIncome > 0) {
+        // Update monthly income based on last 30 days
+        final updatedDist = currentDist.copyWith(monthlyIncome: last30DaysIncome);
+        await db.insertDistribution(updatedDist);
+      }
+
+      // Close loading
+      if (mounted) Navigator.pop(context);
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Redistribución configurada para el día $result')),
+          SnackBar(
+            content: Text(
+              'Redistribución día $result. '
+              'Presupuestos recalculados con ${Formatters.formatCurrency(last30DaysIncome)} de ingresos (30 días).',
+            ),
+            duration: const Duration(seconds: 3),
+          ),
         );
       }
     }

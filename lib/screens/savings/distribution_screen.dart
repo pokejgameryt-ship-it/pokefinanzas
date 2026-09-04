@@ -876,10 +876,32 @@ class _DistributionScreenState extends State<DistributionScreen> {
                 FilledButton(
                   onPressed: () async {
                     await _db.setGlobalRedistributionDay(tempDay);
+
+                    // Recalculate budgets from last 30 days income
+                    final now = DateTime.now();
+                    final thirtyDaysAgo = now.subtract(const Duration(days: 30));
+                    final last30DaysIncome = await _db.getIncomesByDateRange(thirtyDaysAgo, now);
+
+                    if (_currentDistribution != null && last30DaysIncome > 0) {
+                      final updatedDist = _currentDistribution!.copyWith(monthlyIncome: last30DaysIncome);
+                      await _db.insertDistribution(updatedDist);
+                    }
+
                     if (mounted) setState(() => _globalRedistributionDay = tempDay);
                     if (ctx.mounted) Navigator.pop(ctx);
+
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(
+                            'Día $tempDay. Presupuestos recalculados: ${Formatters.formatCurrency(last30DaysIncome)} (30 días).',
+                          ),
+                          duration: const Duration(seconds: 3),
+                        ),
+                      );
+                    }
                   },
-                  child: const Text('Guardar'),
+                  child: const Text('Guardar y recalcular'),
                 ),
                 const SizedBox(height: 16),
               ],

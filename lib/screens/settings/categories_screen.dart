@@ -45,12 +45,35 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 
   Future<void> _addCategory() async {
-    final result = await Navigator.push<CategoryModel>(
+    final result = await Navigator.push<Map<String, dynamic>>(
       context,
-      MaterialPageRoute(builder: (_) => const _CategoryEditScreen()),
+      MaterialPageRoute(
+        builder: (_) => CategoryEditScreen(
+          monthlyIncome: _currentDist?.monthlyIncome ?? 0,
+        ),
+      ),
     );
     if (result != null) {
-      await _db.insertCategory(result);
+      final cat = result['category'] as CategoryModel;
+      await _db.insertCategory(cat);
+
+      // If budget was set and there's a distribution, add it
+      final budgetType = result['budgetType'] as String?;
+      final budgetValue = result['budgetValue'] as double?;
+      if (_currentDist != null && budgetType != null && budgetValue != null && budgetValue > 0) {
+        final cats = List<DistributionCategory>.from(_currentDist!.categories);
+        cats.add(DistributionCategory(
+          name: cat.name,
+          fixedAmount: budgetType == 'fixed' ? budgetValue : null,
+          percentage: budgetType == 'percentage' ? budgetValue : null,
+          isFixed: budgetType == 'fixed',
+          spentAmount: 0,
+          isAutomatic: false,
+          isEnabled: true,
+        ));
+        final updatedDist = _currentDist!.copyWith(categories: cats);
+        await _db.insertDistribution(updatedDist);
+      }
       await _loadCategories();
     }
   }
@@ -60,7 +83,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     final result = await Navigator.push<Map<String, dynamic>>(
       context,
       MaterialPageRoute(
-        builder: (_) => _CategoryEditScreen(
+        builder: (_) => CategoryEditScreen(
           category: cat,
           distCategory: distCat,
           monthlyIncome: _currentDist?.monthlyIncome ?? 0,
@@ -72,28 +95,55 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       await _db.updateCategory(updatedCat);
 
       // Save budget changes to distribution
-      final budgetType = result['budgetType'] as String?;
-      final budgetValue = result['budgetValue'] as double?;
-      if (_currentDist != null && budgetType != null && budgetValue != null) {
+      if (_currentDist != null) {
+        final budgetType = result['budgetType'] as String?;
+        final budgetValue = result['budgetValue'] as double?;
+        final hasBudget = result['hasBudget'] as bool? ?? false;
+
         final cats = List<DistributionCategory>.from(_currentDist!.categories);
         final idx = cats.indexWhere((c) => c.name == cat.name);
-        if (idx >= 0) {
+
+        if (hasBudget && budgetType != null && budgetValue != null && budgetValue > 0) {
           if (budgetType == 'fixed') {
-            cats[idx] = cats[idx].copyWith(
+            final newCat = DistributionCategory(
+              name: cat.name,
               fixedAmount: budgetValue,
               percentage: null,
               isFixed: true,
+              spentAmount: idx >= 0 ? cats[idx].spentAmount : 0,
+              isAutomatic: false,
+              isEnabled: true,
+              redistributionPercentages: idx >= 0 ? cats[idx].redistributionPercentages : {cat.name: 100},
             );
+            if (idx >= 0) {
+              cats[idx] = newCat;
+            } else {
+              cats.add(newCat);
+            }
           } else {
-            cats[idx] = cats[idx].copyWith(
+            final newCat = DistributionCategory(
+              name: cat.name,
               percentage: budgetValue,
               fixedAmount: null,
               isFixed: false,
+              spentAmount: idx >= 0 ? cats[idx].spentAmount : 0,
+              isAutomatic: false,
+              isEnabled: true,
+              redistributionPercentages: idx >= 0 ? cats[idx].redistributionPercentages : {cat.name: 100},
             );
+            if (idx >= 0) {
+              cats[idx] = newCat;
+            } else {
+              cats.add(newCat);
+            }
           }
-          final updatedDist = _currentDist!.copyWith(categories: cats);
-          await _db.insertDistribution(updatedDist);
+        } else if (idx >= 0) {
+          // Budget was removed - keep category in dist but set to 0
+          cats[idx] = cats[idx].copyWith(fixedAmount: 0, percentage: 0);
         }
+
+        final updatedDist = _currentDist!.copyWith(categories: cats);
+        await _db.insertDistribution(updatedDist);
       }
       await _loadCategories();
     }
@@ -120,6 +170,13 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       ),
     );
     if (confirm == true) {
+      // Remove from distribution if exists
+      if (_currentDist != null) {
+        final cats = List<DistributionCategory>.from(_currentDist!.categories);
+        cats.removeWhere((c) => c.name == cat.name);
+        final updatedDist = _currentDist!.copyWith(categories: cats);
+        await _db.insertDistribution(updatedDist);
+      }
       await _db.deleteCategory(cat.id);
       await _loadCategories();
     }
@@ -128,6 +185,16 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   Future<void> _toggleCategory(CategoryModel cat) async {
     final updated = cat.copyWith(isEnabled: !cat.isEnabled);
     await _db.updateCategory(updated);
+    // Also toggle in distribution
+    if (_currentDist != null) {
+      final cats = List<DistributionCategory>.from(_currentDist!.categories);
+      final idx = cats.indexWhere((c) => c.name == cat.name);
+      if (idx >= 0) {
+        cats[idx] = cats[idx].copyWith(isEnabled: !cats[idx].isEnabled);
+        final updatedDist = _currentDist!.copyWith(categories: cats);
+        await _db.insertDistribution(updatedDist);
+      }
+    }
     await _loadCategories();
   }
 
@@ -202,22 +269,23 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   }
 }
 
-class _CategoryEditScreen extends StatefulWidget {
+class CategoryEditScreen extends StatefulWidget {
   final CategoryModel? category;
   final DistributionCategory? distCategory;
   final double monthlyIncome;
 
-  const _CategoryEditScreen({
+  const CategoryEditScreen({
+    super.key,
     this.category,
     this.distCategory,
     this.monthlyIncome = 0,
   });
 
   @override
-  State<_CategoryEditScreen> createState() => _CategoryEditScreenState();
+  State<CategoryEditScreen> createState() => _CategoryEditScreenState();
 }
 
-class _CategoryEditScreenState extends State<_CategoryEditScreen> {
+class _CategoryEditScreenState extends State<CategoryEditScreen> {
   late TextEditingController _nameController;
   late TextEditingController _budgetController;
   late int _selectedIcon;
@@ -252,6 +320,7 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
     _selectedIcon = widget.category?.iconCodePoint ?? Icons.category.codePoint;
     _selectedColor = widget.category?.colorValue ?? Colors.grey.value;
 
+    // Load budget from distribution if exists
     if (widget.distCategory != null) {
       _isFixed = widget.distCategory!.isFixed;
       _hasBudget = true;
@@ -263,7 +332,7 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
       );
     } else {
       _isFixed = true;
-      _hasBudget = false;
+      _hasBudget = widget.category != null; // Default to true when editing
       _budgetController = TextEditingController();
     }
   }
@@ -294,17 +363,11 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
       order: widget.category?.order ?? 0,
     );
 
-    String? budgetType;
-    double? budgetValue;
-    if (_hasBudget) {
-      budgetType = _isFixed ? 'fixed' : 'percentage';
-      budgetValue = double.tryParse(_budgetController.text) ?? 0;
-    }
-
     Navigator.pop(context, {
       'category': cat,
-      'budgetType': budgetType,
-      'budgetValue': budgetValue,
+      'hasBudget': _hasBudget,
+      'budgetType': _hasBudget ? (_isFixed ? 'fixed' : 'percentage') : null,
+      'budgetValue': _hasBudget ? (double.tryParse(_budgetController.text) ?? 0) : null,
     });
   }
 
@@ -329,49 +392,72 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
           ),
           const SizedBox(height: 24),
 
-          // ── Budget ──
-          if (widget.category != null) ...[
-            Row(
-              children: [
-                const Text('Presupuesto', style: TextStyle(fontWeight: FontWeight.bold)),
-                const Spacer(),
-                Switch(
-                  value: _hasBudget,
-                  onChanged: (v) => setState(() => _hasBudget = v),
-                ),
-              ],
-            ),
-            if (_hasBudget) ...[
-              const SizedBox(height: 8),
-              SegmentedButton<bool>(
-                segments: const [
-                  ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro)),
-                  ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent)),
+          // ── Budget Section (always visible) ──
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.account_balance_wallet, size: 20),
+                      const SizedBox(width: 8),
+                      const Text('Presupuesto', style: TextStyle(fontWeight: FontWeight.bold)),
+                      const Spacer(),
+                      Switch(
+                        value: _hasBudget,
+                        onChanged: (v) => setState(() => _hasBudget = v),
+                      ),
+                    ],
+                  ),
+                  if (_hasBudget) ...[
+                    const SizedBox(height: 12),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro)),
+                        ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent)),
+                      ],
+                      selected: {_isFixed},
+                      onSelectionChanged: (s) => setState(() => _isFixed = s.first),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _budgetController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: _isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
+                        border: const OutlineInputBorder(),
+                        prefixText: _isFixed ? '€ ' : '',
+                        suffixText: _isFixed ? '' : '%',
+                      ),
+                    ),
+                    if (_isFixed && widget.monthlyIncome > 0) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Ingreso mensual: ${Formatters.formatCurrency(widget.monthlyIncome)}',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                    if (!_isFixed) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Porcentaje del ingreso sobrante después de gastos fijos',
+                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
+                  ] else ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Activa el presupuesto para asignar una cantidad o porcentaje',
+                      style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
                 ],
-                selected: {_isFixed},
-                onSelectionChanged: (s) => setState(() => _isFixed = s.first),
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _budgetController,
-                keyboardType: TextInputType.number,
-                decoration: InputDecoration(
-                  labelText: _isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
-                  border: const OutlineInputBorder(),
-                  prefixText: _isFixed ? '€ ' : '',
-                  suffixText: _isFixed ? '' : '%',
-                ),
-              ),
-              if (_isFixed && widget.monthlyIncome > 0) ...[
-                const SizedBox(height: 4),
-                Text(
-                  'Ingreso mensual: ${Formatters.formatCurrency(widget.monthlyIncome)}',
-                  style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
-                ),
-              ],
-            ],
-            const SizedBox(height: 24),
-          ],
+            ),
+          ),
+          const SizedBox(height: 24),
 
           const Text('Icono', style: TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
@@ -387,8 +473,8 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
                   height: 44,
                   decoration: BoxDecoration(
                     color: selected
-                        ? Color(_selectedColor).withOpacity(0.2)
-                        : Colors.grey.withOpacity(0.1),
+                        ? Color(_selectedColor).withValues(alpha: 0.2)
+                        : Colors.grey.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(10),
                     border: selected
                         ? Border.all(color: Color(_selectedColor), width: 2)
@@ -406,9 +492,9 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
             spacing: 8,
             runSpacing: 8,
             children: _colors.map((color) {
-              final selected = color.value == _selectedColor;
+              final selected = color.toARGB32() == _selectedColor;
               return GestureDetector(
-                onTap: () => setState(() => _selectedColor = color.value),
+                onTap: () => setState(() => _selectedColor = color.toARGB32()),
                 child: Container(
                   width: 44,
                   height: 44,
@@ -419,7 +505,7 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
                         ? Border.all(color: Colors.white, width: 3)
                         : null,
                     boxShadow: selected
-                        ? [BoxShadow(color: color.withOpacity(0.5), blurRadius: 8)]
+                        ? [BoxShadow(color: color.withValues(alpha: 0.5), blurRadius: 8)]
                         : null,
                   ),
                   child: selected ? const Icon(Icons.check, color: Colors.white, size: 20) : null,
@@ -432,9 +518,9 @@ class _CategoryEditScreenState extends State<_CategoryEditScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               decoration: BoxDecoration(
-                color: Color(_selectedColor).withOpacity(0.1),
+                color: Color(_selectedColor).withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Color(_selectedColor).withOpacity(0.3)),
+                border: Border.all(color: Color(_selectedColor).withValues(alpha: 0.3)),
               ),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
