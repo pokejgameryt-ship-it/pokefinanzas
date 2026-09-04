@@ -293,16 +293,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save the new day
       await db.setGlobalRedistributionDay(result);
 
-      // Recalculate budgets from last 30 days income
+      // Recalculate income AND expenses from last 30 days
       final now = DateTime.now();
       final thirtyDaysAgo = now.subtract(const Duration(days: 30));
       final last30DaysIncome = await db.getIncomesByDateRange(thirtyDaysAgo, now);
+      final last30DaysExpenses = await db.getExpenseListByDateRange(thirtyDaysAgo, now);
 
       // Get current distribution
       final currentDist = await db.getDistribution(now.month, now.year);
-      if (currentDist != null && last30DaysIncome > 0) {
-        // Update monthly income based on last 30 days
-        final updatedDist = currentDist.copyWith(monthlyIncome: last30DaysIncome);
+      if (currentDist != null) {
+        // Calculate per-category spent from last 30 days
+        final updatedCategories = currentDist.categories.map((cat) {
+          if (cat.isAutomatic) {
+            double transfers = 0;
+            for (final exp in last30DaysExpenses) {
+              if (exp.isTransfer && exp.transferTo == 'Ahorro') {
+                transfers += exp.amount;
+              }
+            }
+            return cat.copyWith(spentAmount: transfers);
+          }
+          double spent = 0;
+          for (final exp in last30DaysExpenses) {
+            if (exp.category == cat.name ||
+                (exp.isRecurring && exp.recurringName == cat.name)) {
+              spent += exp.amount;
+            }
+          }
+          return cat.copyWith(spentAmount: spent);
+        }).toList();
+
+        final updatedDist = currentDist.copyWith(
+          monthlyIncome: last30DaysIncome > 0 ? last30DaysIncome : currentDist.monthlyIncome,
+          categories: updatedCategories,
+        );
         await db.insertDistribution(updatedDist);
       }
 
@@ -313,10 +337,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Redistribución día $result. '
-              'Presupuestos recalculados con ${Formatters.formatCurrency(last30DaysIncome)} de ingresos (30 días).',
+              'Día $result. '
+              'Ingresos 30d: ${Formatters.formatCurrency(last30DaysIncome)}, '
+              'Gastos 30d: ${Formatters.formatCurrency(last30DaysExpenses.fold(0.0, (s, e) => s + e.amount))}',
             ),
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
           ),
         );
       }

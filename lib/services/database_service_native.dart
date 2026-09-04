@@ -204,6 +204,15 @@ class DatabaseService implements DatabaseServiceInterface {
     return total;
   }
 
+  Future<List<Expense>> getExpenseListByDateRange(DateTime from, DateTime to) async {
+    return _expenses.where((e) {
+      if (e.isTransfer) return false;
+      if (e.category == 'Cajero') return false;
+      return e.date.isAfter(from.subtract(const Duration(days: 1))) &&
+          e.date.isBefore(to.add(const Duration(days: 1)));
+    }).toList()..sort((a, b) => b.date.compareTo(a.date));
+  }
+
   @override
   Future<void> deleteExpense(String id) async {
     _expenses.removeWhere((e) => e.id == id);
