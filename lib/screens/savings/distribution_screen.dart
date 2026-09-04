@@ -510,6 +510,15 @@ class _DistributionScreenState extends State<DistributionScreen> {
   void _showCategoryRedistributionDialog(int categoryIndex) {
     final dist = _currentDistribution!;
     final cat = dist.categories[categoryIndex];
+    if (cat.isAutomatic) return;
+
+    final nameController = TextEditingController(text: cat.name);
+    final budgetController = TextEditingController(
+      text: cat.isFixed
+          ? (cat.fixedAmount ?? 0).toStringAsFixed(2)
+          : (cat.percentage ?? 0).toStringAsFixed(0),
+    );
+    bool isFixed = cat.isFixed;
 
     // Include ALL categories (including self) + Ahorro
     final allTargets = <String>{
@@ -525,12 +534,8 @@ class _DistributionScreenState extends State<DistributionScreen> {
       );
     }
 
-    final budget = cat.isAutomatic
-        ? dist.savingsBudget
-        : dist.getCategoryBudget(cat);
-    final unspent = cat.isAutomatic
-        ? (dist.savingsBudget - cat.spentAmount).clamp(0.0, double.infinity)
-        : (budget - cat.spentAmount).clamp(0.0, double.infinity);
+    final budget = dist.getCategoryBudget(cat);
+    final unspent = (budget - cat.spentAmount).clamp(0.0, double.infinity);
 
     showModalBottomSheet(
       context: context,
@@ -544,90 +549,169 @@ class _DistributionScreenState extends State<DistributionScreen> {
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
             left: 24, right: 24, top: 24,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Center(
-                child: Container(
-                  width: 40, height: 4,
-                  decoration: BoxDecoration(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40, height: 4,
+                    decoration: BoxDecoration(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                      borderRadius: BorderRadius.circular(2),
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Redistribución: ${cat.name}',
-                style: Theme.of(ctx).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'No gastado: ${Formatters.formatCurrency(unspent)} de ${Formatters.formatCurrency(budget)}',
-                style: TextStyle(
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                  fontSize: 13,
+                const SizedBox(height: 16),
+                Text(
+                  'Editar categoría',
+                  style: Theme.of(ctx).textTheme.titleLarge,
                 ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Indica a dónde va el dinero no gastado (%)\nPuede ir a la misma categoría',
-                style: TextStyle(
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                  fontSize: 12,
+                const SizedBox(height: 20),
+
+                // ── Name ──
+                TextField(
+                  controller: nameController,
+                  decoration: const InputDecoration(
+                    labelText: 'Nombre',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 16),
-              ...controllers.entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        flex: 3,
-                        child: Text(
-                          entry.key,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                      ),
-                      Expanded(
-                        flex: 2,
-                        child: TextField(
-                          controller: entry.value,
-                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                          decoration: const InputDecoration(
-                            suffixText: '%',
-                            isDense: true,
+                const SizedBox(height: 16),
+
+                // ── Budget type & value ──
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance_wallet, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Presupuesto',
+                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('Fijo (€)'), icon: Icon(Icons.euro, size: 16)),
+                    ButtonSegment(value: false, label: Text('% del sobrante'), icon: Icon(Icons.percent, size: 16)),
+                  ],
+                  selected: {isFixed},
+                  onSelectionChanged: (s) => setModalState(() => isFixed = s.first),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: budgetController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: isFixed ? 'Cantidad fija (€)' : 'Porcentaje del sobrante (%)',
+                    border: const OutlineInputBorder(),
+                    prefixText: isFixed ? '€ ' : '',
+                    suffixText: isFixed ? '' : '%',
+                  ),
+                ),
+                if (isFixed && dist.monthlyIncome > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'Ingreso mensual: ${Formatters.formatCurrency(dist.monthlyIncome)}',
+                    style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
+                  ),
+                ],
+                const SizedBox(height: 20),
+
+                // ── Redistribution ──
+                Row(
+                  children: [
+                    const Icon(Icons.swap_horiz, size: 20),
+                    const SizedBox(width: 8),
+                    Text('Redistribuir sobrante',
+                      style: Theme.of(ctx).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'No gastado: ${Formatters.formatCurrency(unspent)} de ${Formatters.formatCurrency(budget)}',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '¿A dónde va el dinero no gastado? (%)',
+                  style: TextStyle(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                ...controllers.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: Text(
+                            entry.key,
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () async {
-                  final newPercentages = <String, double>{};
-                  for (final entry in controllers.entries) {
-                    final val = double.tryParse(entry.value.text) ?? 0;
-                    if (val > 0) {
-                      newPercentages[entry.key] = val;
-                    }
-                  }
-                  final updatedCat = cat.copyWith(
-                    redistributionPercentages: newPercentages,
+                        Expanded(
+                          flex: 2,
+                          child: TextField(
+                            controller: entry.value,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(
+                              suffixText: '%',
+                              isDense: true,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
                   );
-                  final cats = List<DistributionCategory>.from(dist.categories);
-                  cats[categoryIndex] = updatedCat;
-                  await _saveDistribution(dist.copyWith(categories: cats));
-                  if (ctx.mounted) Navigator.pop(ctx);
-                },
-                child: const Text('Guardar'),
-              ),
-              const SizedBox(height: 16),
-            ],
+                }),
+                const SizedBox(height: 16),
+
+                // ── Save ──
+                FilledButton(
+                  onPressed: () async {
+                    final newName = nameController.text.trim();
+                    if (newName.isEmpty) {
+                      ScaffoldMessenger.of(ctx).showSnackBar(
+                        const SnackBar(content: Text('El nombre no puede estar vacío')),
+                      );
+                      return;
+                    }
+
+                    final newBudgetValue = double.tryParse(budgetController.text) ?? 0;
+
+                    final newPercentages = <String, double>{};
+                    for (final entry in controllers.entries) {
+                      final val = double.tryParse(entry.value.text) ?? 0;
+                      if (val > 0) {
+                        newPercentages[entry.key] = val;
+                      }
+                    }
+
+                    final updatedCat = cat.copyWith(
+                      name: newName,
+                      fixedAmount: isFixed ? newBudgetValue : null,
+                      percentage: !isFixed ? newBudgetValue : null,
+                      isFixed: isFixed,
+                      redistributionPercentages: newPercentages,
+                    );
+
+                    final cats = List<DistributionCategory>.from(dist.categories);
+                    cats[categoryIndex] = updatedCat;
+                    await _saveDistribution(dist.copyWith(categories: cats));
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: const Text('Guardar'),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
       ),
