@@ -917,12 +917,18 @@ class DatabaseService implements DatabaseServiceInterface {
     var dist = await getDistribution(month, year);
     if (dist == null) return;
 
-    // Get expenses
+    // Get expenses using redistribution-day-based period
     List<Expense> expenses;
     if (from != null && to != null) {
       expenses = await getExpenseListByDateRange(from, to);
     } else {
-      expenses = await getExpensesByMonth(month, year);
+      // Default: use redistribution-day-based period
+      final redistribDay = await getGlobalRedistributionDay();
+      final prevMonth = month == 1 ? 12 : month - 1;
+      final prevYear = month == 1 ? year - 1 : year;
+      final periodStart = DateTime(prevYear, prevMonth, redistribDay);
+      final periodEnd = DateTime(month, year, redistribDay > 1 ? redistribDay - 1 : 1);
+      expenses = await getExpenseListByDateRange(periodStart, periodEnd);
     }
 
     // Recalculate per-category spent

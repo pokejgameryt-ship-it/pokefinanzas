@@ -294,25 +294,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save the new day
       await db.setGlobalRedistributionDay(result);
 
-      // Recalculate income from last 30 days
+      // Calculate period based on redistribution day
       final now = DateTime.now();
-      final thirtyDaysAgo = now.subtract(const Duration(days: 30));
-      final last30DaysIncome = await db.getIncomesByDateRange(thirtyDaysAgo, now);
+      final month = now.month;
+      final year = now.year;
+      final prevMonth = month == 1 ? 12 : month - 1;
+      final prevYear = month == 1 ? year - 1 : year;
+      final periodStart = DateTime(prevYear, prevMonth, result);
+      final periodEnd = DateTime(month, year, result > 1 ? result - 1 : 1);
+
+      // Recalculate income from redistribution period
+      final periodIncome = await db.getIncomesByDateRange(periodStart, periodEnd);
 
       // Update monthly income
-      final currentDist = await db.getDistribution(now.month, now.year);
-      if (currentDist != null && last30DaysIncome > 0) {
-        await db.insertDistribution(currentDist.copyWith(monthlyIncome: last30DaysIncome));
+      final currentDist = await db.getDistribution(month, year);
+      if (currentDist != null && periodIncome > 0) {
+        await db.insertDistribution(currentDist.copyWith(monthlyIncome: periodIncome));
       }
 
-      // Recalculate spent amounts from actual expenses (last 30 days)
-      await db.recalculateDistributionSpent(from: thirtyDaysAgo, to: now);
+      // Recalculate spent amounts from actual expenses (redistribution period)
+      await db.recalculateDistributionSpent(from: periodStart, to: periodEnd);
 
       // Notify distribution screen to reload
       RedistributionNotifier.instance.notify();
 
       // Reload distribution to get updated values
-      final updatedDist = await db.getDistribution(now.month, now.year);
+      final updatedDist = await db.getDistribution(month, year);
       final totalSpent = updatedDist?.totalSpent ?? 0;
 
       // Close loading
@@ -323,7 +330,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           SnackBar(
             content: Text(
               'Día $result. '
-              'Ingresos 30d: ${Formatters.formatCurrency(last30DaysIncome)}, '
+              'Ingresos: ${Formatters.formatCurrency(periodIncome)}, '
               'Gastado: ${Formatters.formatCurrency(totalSpent)}',
             ),
             duration: const Duration(seconds: 4),

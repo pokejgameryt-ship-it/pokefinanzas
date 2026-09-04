@@ -83,6 +83,19 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       final month = _selectedMonth.month;
       final year = _selectedMonth.year;
 
+      // Load redistribution day to determine the correct period
+      _globalRedistributionDay = await _db.getGlobalRedistributionDay();
+      _redistributionEnabled = await _db.getRedistributionEnabled();
+      final redistribDay = _globalRedistributionDay;
+
+      // Calculate period boundaries based on redistribution day
+      // Period = redistribDay of previous month → (redistribDay - 1) of current month
+      final now = DateTime.now();
+      final prevMonth = month == 1 ? 12 : month - 1;
+      final prevYear = month == 1 ? year - 1 : year;
+      final periodStart = DateTime(prevYear, prevMonth, redistribDay);
+      final periodEnd = DateTime(month, year, redistribDay > 1 ? redistribDay - 1 : 1);
+
       SavingsDistribution? dist;
       try {
         dist = await _db.getDistribution(month, year);
@@ -101,14 +114,11 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         return;
       }
 
-      // Always sync monthlyIncome with actual previous month income (daily recalculation)
-      // This preserves spentAmount in categories while updating the budget
+      // Sync monthlyIncome with actual income from redistribution period
       if (dist != null) {
-        final prevMonth = month == 1 ? 12 : month - 1;
-        final prevYear = month == 1 ? year - 1 : year;
-        final actualPrevIncome = await _db.getTotalIncomeByMonth(prevMonth, prevYear);
-        if (actualPrevIncome > 0 && dist.monthlyIncome != actualPrevIncome) {
-          dist = dist.copyWith(monthlyIncome: actualPrevIncome);
+        final actualIncome = await _db.getIncomesByDateRange(periodStart, periodEnd);
+        if (actualIncome > 0 && dist.monthlyIncome != actualIncome) {
+          dist = dist.copyWith(monthlyIncome: actualIncome);
           await _db.insertDistribution(dist);
         }
       }
@@ -205,10 +215,10 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = dist.copyWith(categories: cats);
       }
 
-      // Calculate spent amounts from actual expenses
+      // Calculate spent amounts from actual expenses using redistribution period
       List<Expense> expenses = [];
       try {
-        expenses = await _db.getExpensesByMonth(month, year);
+        expenses = await _db.getExpenseListByDateRange(periodStart, periodEnd);
       } catch (_) {}
 
       // Calculate actual transfers to savings
@@ -241,8 +251,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       await _db.updateDistribution(updatedDist);
 
       // Load redistribution settings
-      _globalRedistributionDay = await _db.getGlobalRedistributionDay();
-      _redistributionEnabled = await _db.getRedistributionEnabled();
       _redistributionConfigs = await _db.getRedistributionConfigs();
       _redistributionPresets = await _db.getRedistributionPresets();
 
@@ -982,19 +990,26 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   onPressed: () async {
                     await _db.setGlobalRedistributionDay(tempDay);
 
-                    // Recalculate income from last 30 days
+                    // Calculate period based on redistribution day
                     final now = DateTime.now();
-                    final thirtyDaysAgo = now.subtract(const Duration(days: 30));
-                    final last30DaysIncome = await _db.getIncomesByDateRange(thirtyDaysAgo, now);
+                    final month = now.month;
+                    final year = now.year;
+                    final prevMonth = month == 1 ? 12 : month - 1;
+                    final prevYear = month == 1 ? year - 1 : year;
+                    final periodStart = DateTime(prevYear, prevMonth, tempDay);
+                    final periodEnd = DateTime(month, year, tempDay > 1 ? tempDay - 1 : 1);
+
+                    // Recalculate income from redistribution period
+                    final periodIncome = await _db.getIncomesByDateRange(periodStart, periodEnd);
 
                     // Update monthly income
-                    if (_currentDistribution != null && last30DaysIncome > 0) {
+                    if (_currentDistribution != null && periodIncome > 0) {
                       await _db.insertDistribution(
-                        _currentDistribution!.copyWith(monthlyIncome: last30DaysIncome));
+                        _currentDistribution!.copyWith(monthlyIncome: periodIncome));
                     }
 
-                    // Recalculate spent amounts from actual expenses (last 30 days)
-                    await _db.recalculateDistributionSpent(from: thirtyDaysAgo, to: now);
+                    // Recalculate spent amounts from actual expenses (redistribution period)
+                    await _db.recalculateDistributionSpent(from: periodStart, to: periodEnd);
 
                     if (mounted) setState(() => _globalRedistributionDay = tempDay);
                     if (ctx.mounted) Navigator.pop(ctx);
