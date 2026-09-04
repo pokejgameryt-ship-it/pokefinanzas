@@ -294,27 +294,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       // Save the new day
       await db.setGlobalRedistributionDay(result);
 
-      // Get total income and total expenses (all time)
-      final totalIncome = await db.getTotalIncomeAll();
-      final now = DateTime.now();
-      final month = now.month;
-      final year = now.year;
-
-      // Update distribution with total income
-      final currentDist = await db.getDistribution(month, year);
-      if (currentDist != null && totalIncome > 0) {
-        await db.insertDistribution(currentDist.copyWith(monthlyIncome: totalIncome));
-      }
-
-      // Recalculate spent amounts from all expenses
-      await db.recalculateDistributionSpent();
-
       // Notify distribution screen to reload
       RedistributionNotifier.instance.notify();
-
-      // Reload distribution to get updated values
-      final updatedDist = await db.getDistribution(month, year);
-      final totalSpent = updatedDist?.totalSpent ?? 0;
 
       // Close loading
       if (mounted) Navigator.pop(context);
@@ -322,12 +303,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              'Día $result. '
-              'Ingresos: ${Formatters.formatCurrency(totalIncome)}, '
-              'Gastado: ${Formatters.formatCurrency(totalSpent)}',
-            ),
-            duration: const Duration(seconds: 4),
+            content: Text('Día de redistribución: $result'),
+            duration: const Duration(seconds: 3),
           ),
         );
       }

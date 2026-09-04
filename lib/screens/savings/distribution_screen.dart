@@ -89,9 +89,8 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       _redistributionConfigs = await _db.getRedistributionConfigs();
       _redistributionPresets = await _db.getRedistributionPresets();
 
-      // Get total income and total expenses (all time)
-      final totalIncome = await _db.getTotalIncomeAll();
-      final allExpenses = await _db.getAllExpenses();
+      // Get THIS MONTH's income only
+      final thisMonthIncome = await _db.getTotalIncomeByMonth(month, year);
 
       SavingsDistribution? dist;
       try {
@@ -100,14 +99,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = null;
       }
 
-      // Create or update distribution with total income
       if (dist == null) {
-        // No distribution for this month — create one with total income
+        // Create fresh distribution for this month
         dist = SavingsDistribution(
           id: const Uuid().v4(),
           month: month,
           year: year,
-          monthlyIncome: totalIncome,
+          monthlyIncome: thisMonthIncome,
           categories: [
             DistributionCategory(
               name: 'Ahorro',
@@ -117,8 +115,15 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           ],
         );
         await _db.insertDistribution(dist);
-      } else if (dist.monthlyIncome != totalIncome) {
-        dist = dist.copyWith(monthlyIncome: totalIncome);
+      } else {
+        // Reset: update income to this month's actual, clear spentAmount
+        final resetCategories = dist.categories.map((cat) =>
+          cat.copyWith(spentAmount: 0, totalRedistributionReceived: 0)
+        ).toList();
+        dist = dist.copyWith(
+          monthlyIncome: thisMonthIncome,
+          categories: resetCategories,
+        );
         await _db.insertDistribution(dist);
       }
 
@@ -133,106 +138,19 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = dist.copyWith(categories: cats);
       }
 
-      // Calculate spent amounts from ALL expenses
-      double transfersToSavings = 0;
-      for (final expense in allExpenses) {
-        if (expense.isTransfer && expense.transferTo == 'Ahorro') {
-          transfersToSavings += expense.amount;
-        }
-      }
-
-      final updatedCategories = dist.categories.map((cat) {
-        if (cat.isAutomatic) {
-          return cat.copyWith(spentAmount: transfersToSavings);
-        }
-        double spent = 0;
-        for (final expense in allExpenses) {
-          if (expense.isTransfer) continue;
-          if (expense.category == 'Cajero') continue;
-          if (expense.category == cat.name ||
-              (expense.isRecurring && expense.recurringName == cat.name)) {
-            spent += expense.amount;
-          }
-        }
-        return cat.copyWith(spentAmount: spent);
-      }).toList();
-
-      final updatedDist = dist.copyWith(categories: updatedCategories);
-
-      // Persist recalculated spentAmount
-      await _db.updateDistribution(updatedDist);
-
-      // Calculate redistribution received by each category from previous month
-      double prevRedistribution = 0;
-      try {
-        prevRedistribution = await _db.calculateRedistributionForMonth(month, year);
-      } catch (_) {}
-
+      // No redistribution from previous month — fresh start
       final Map<String, double> redistributionReceived = {};
-      
-      // First check if redistribution was already applied
-      bool hasAppliedRedistribution = false;
-      for (final cat in updatedDist.userCategories) {
-        if (cat.totalRedistributionReceived > 0) {
-          redistributionReceived[cat.name] = cat.totalRedistributionReceived;
-          hasAppliedRedistribution = true;
-        }
-      }
-      
-      // If no redistribution was applied yet, calculate expected from previous month
-      if (!hasAppliedRedistribution && _redistributionEnabled) {
-        SavingsDistribution? prevDist;
-        try {
-          final prevMonth = month == 1 ? 12 : month - 1;
-          final prevYear = month == 1 ? year - 1 : year;
-          prevDist = await _db.getDistribution(prevMonth, prevYear);
-        } catch (_) {}
-        if (prevDist != null) {
-          final income = totalIncome > 0 ? totalIncome : prevDist.monthlyIncome;
-          
-          final Map<String, double> redistributionByTarget = {};
-          for (final sourceCat in prevDist.categories) {
-            if (sourceCat.isAutomatic) continue;
-            if (!sourceCat.isEnabled) continue;
-            final unspent = prevDist.getCategoryUnspentBase(sourceCat);
-            if (unspent <= 0) continue;
-            final config = _redistributionConfigs[sourceCat.name];
-            final percentages = config?.redistributionPercentages.isNotEmpty == true
-                ? config!.redistributionPercentages
-                : (sourceCat.redistributionPercentages.isNotEmpty
-                    ? sourceCat.redistributionPercentages
-                    : {sourceCat.name: 100.0});
-            for (final entry in percentages.entries) {
-              redistributionByTarget[entry.key] =
-                  (redistributionByTarget[entry.key] ?? 0) + unspent * entry.value / 100;
-            }
-          }
-          // Cap at net savings
-          final netSavings = income - prevDist.totalSpent;
-          double totalRedistributed = redistributionByTarget.values.fold(0.0, (a, b) => a + b);
-          if (totalRedistributed > netSavings && netSavings > 0) {
-            final factor = netSavings / totalRedistributed;
-            for (final key in redistributionByTarget.keys) {
-              redistributionByTarget[key] = redistributionByTarget[key]! * factor;
-            }
-          }
-          for (final cat in updatedDist.userCategories) {
-            redistributionReceived[cat.name] = redistributionByTarget[cat.name] ?? 0;
-          }
-        }
-      }
 
       if (mounted) {
         setState(() {
-          _currentDistribution = updatedDist;
-          _previousMonthRedistribution = prevRedistribution;
-          _transfersToSavings = transfersToSavings;
+          _currentDistribution = dist;
+          _previousMonthRedistribution = 0;
+          _transfersToSavings = 0;
           _redistributionReceivedMap = redistributionReceived;
           _isLoading = false;
         });
       }
     } catch (e) {
-
       if (mounted) {
         setState(() {
           _currentDistribution = _currentDistribution ?? SavingsDistribution(
@@ -899,25 +817,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   onPressed: () async {
                     await _db.setGlobalRedistributionDay(tempDay);
 
-                    // Get total income and total expenses (all time)
-                    final totalIncome = await _db.getTotalIncomeAll();
-
-                    // Update monthly income
-                    if (_currentDistribution != null && totalIncome > 0) {
-                      await _db.insertDistribution(
-                        _currentDistribution!.copyWith(monthlyIncome: totalIncome));
-                    }
-
-                    // Recalculate spent amounts from all expenses
-                    await _db.recalculateDistributionSpent();
-
                     if (mounted) setState(() => _globalRedistributionDay = tempDay);
                     if (ctx.mounted) Navigator.pop(ctx);
 
-                    // Reload distribution to show updated spent amounts
+                    // Reload distribution
                     if (mounted) _loadData();
                   },
-                  child: const Text('Guardar y recalcular'),
+                  child: const Text('Guardar'),
                 ),
                 const SizedBox(height: 16),
               ],
