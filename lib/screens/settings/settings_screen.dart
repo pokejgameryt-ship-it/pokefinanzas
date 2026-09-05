@@ -459,6 +459,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
             trailing: const Icon(Icons.chevron_right),
             onTap: _showRedistributionDayDialog,
           ),
+          ListTile(
+            leading: const Icon(Icons.restart_alt, color: Colors.blue),
+            title: const Text('Resetear distribución'),
+            subtitle: const Text('Borrar todas las distribuciones y recalcular desde cero'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final confirmed = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Resetear distribución'),
+                  content: const Text('Esto borrará todas las distribuciones existentes y se recalcularán con el dinero actual. ¿Continuar?'),
+                  actions: [
+                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                    FilledButton(
+                      onPressed: () => Navigator.pop(ctx, true),
+                      style: FilledButton.styleFrom(backgroundColor: Colors.blue),
+                      child: const Text('Resetear'),
+                    ),
+                  ],
+                ),
+              );
+              if (confirmed == true && mounted) {
+                await DatabaseService.instance.resetAllDistributions();
+                RedistributionNotifier.instance.notify();
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Distribuciones reseteadas. Se recalcularán al abrir Distribución.')),
+                  );
+                }
+              }
+            },
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.red),

@@ -97,9 +97,18 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       }
 
       // Only create distribution if it doesn't exist yet
+      // First time: budget = total money (all income - all expenses, excluding Ahorro)
       if (dist == null) {
         final totalIncome = await _db.getTotalIncomeAll();
-        final totalExpenses = await _db.getTotalExpensesAll();
+        final allExpenses = await _db.getAllExpenses();
+        // Exclude Ahorro expenses (transfers to savings are not part of budget)
+        double totalExpenses = 0;
+        for (final e in allExpenses) {
+          if (e.isTransfer) continue;
+          if (e.category == 'Cajero') continue;
+          if (e.category == 'Ahorro') continue;
+          totalExpenses += e.amount;
+        }
         final currentBalance = totalIncome - totalExpenses;
 
         dist = SavingsDistribution(
@@ -130,12 +139,23 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         await _db.insertDistribution(dist);
       }
 
+      // Calculate redistribution received from previous month
+      double prevRedistribution = 0;
       final Map<String, double> redistributionReceived = {};
+      try {
+        prevRedistribution = await _db.calculateRedistributionForMonth(month, year);
+        // Check if redistribution was already applied
+        for (final cat in dist.userCategories) {
+          if (cat.totalRedistributionReceived > 0) {
+            redistributionReceived[cat.name] = cat.totalRedistributionReceived;
+          }
+        }
+      } catch (_) {}
 
       if (mounted) {
         setState(() {
           _currentDistribution = dist;
-          _previousMonthRedistribution = 0;
+          _previousMonthRedistribution = prevRedistribution;
           _transfersToSavings = 0;
           _redistributionReceivedMap = redistributionReceived;
           _isLoading = false;

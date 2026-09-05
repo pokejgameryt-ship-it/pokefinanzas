@@ -154,6 +154,14 @@ class FirebaseService {
     } catch (_) {}
   }
 
+  static Future<void> deleteAllDistributions() async {
+    if (_userId == null) return;
+    try {
+      final url = Uri.parse('$_baseUrl/${_userPath()}/distributions.json?auth=$_token');
+      await http.delete(url).timeout(_timeout);
+    } catch (_) {}
+  }
+
   static Future<bool> saveNotification(AppNotification notif) async {
     if (_userId == null) return false;
     try {

@@ -260,6 +260,11 @@ class DatabaseService implements DatabaseServiceInterface {
     await FirebaseService.saveDistribution(distribution);
   }
 
+  Future<void> resetAllDistributions() async {
+    _distributions.clear();
+    await FirebaseService.deleteAllDistributions();
+  }
+
   @override
   Future<SavingsDistribution?> getDistribution(int month, int year) async {
     try {
@@ -1006,10 +1011,84 @@ class DatabaseService implements DatabaseServiceInterface {
 
     final prevDist = await getDistribution(prevMonth, prevYear);
 
+    // Calculate redistribution from previous month FIRST
+    double totalRedistributed = 0;
+    final Map<String, double> redistributionByTarget = {};
+    final List<int> appliedPrevIndices = [];
+    final List<DistributionCategory> prevCategories = prevDist != null
+        ? List<DistributionCategory>.from(prevDist.categories)
+        : [];
+
+    if (_redistributionEnabled && prevDist != null) {
+      final actualPrevIncome = prevDist.monthlyIncome;
+      if (actualPrevIncome > 0) {
+        bool alreadyApplied = prevDist.categories
+            .where((c) => !c.isAutomatic)
+            .every((c) => c.redistributionApplied);
+
+        if (!alreadyApplied) {
+          double totalFixedExpenses = 0;
+          for (final cat in prevDist.userCategories) {
+            if (cat.isFixed) {
+              totalFixedExpenses += cat.fixedAmount ?? 0;
+            }
+          }
+
+          if (totalFixedExpenses < actualPrevIncome) {
+            final totalActualSpent = prevDist.totalSpent;
+            if (totalActualSpent < actualPrevIncome) {
+              final netSavings = actualPrevIncome - totalActualSpent;
+
+              for (int pi = 0; pi < prevCategories.length; pi++) {
+                final prevCat = prevCategories[pi];
+                if (prevCat.redistributionApplied) continue;
+
+                final config = _redistributionConfigs[prevCat.name];
+                final catDay = config?.redistributionDay ?? _globalRedistributionDay;
+
+                if (today < catDay) continue;
+
+                if (!prevCat.isEnabled && !prevCat.isAutomatic) continue;
+
+                final unspent = prevDist.getCategoryUnspentBase(prevCat);
+                if (unspent <= 0) continue;
+
+                final percentages = config?.redistributionPercentages.isNotEmpty == true
+                    ? config!.redistributionPercentages
+                    : (prevCat.redistributionPercentages.isNotEmpty
+                        ? prevCat.redistributionPercentages
+                        : {prevCat.name: 100.0});
+
+                for (final entry in percentages.entries) {
+                  final amount = unspent * entry.value / 100;
+                  redistributionByTarget[entry.key] =
+                      (redistributionByTarget[entry.key] ?? 0) + amount;
+                  totalRedistributed += amount;
+                }
+
+                appliedPrevIndices.add(pi);
+              }
+
+              if (totalRedistributed > netSavings && netSavings > 0) {
+                final factor = netSavings / totalRedistributed;
+                for (final key in redistributionByTarget.keys) {
+                  redistributionByTarget[key] = redistributionByTarget[key]! * factor;
+                }
+                totalRedistributed = netSavings;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    // Now create or load current month distribution
     var currentDist = await getDistribution(currentMonth, currentYear);
     if (currentDist == null) {
-      // Only create if doesn't exist — don't overwrite existing
-      final actualPrevIncome = prevDist != null ? prevDist.monthlyIncome : 0;
+      // New month: income = prev month's income + redistribution received
+      final prevIncome = prevDist?.monthlyIncome ?? 0.0;
+      final newIncome = prevIncome + totalRedistributed;
+
       List<DistributionCategory> newCategories;
       if (prevDist != null) {
         newCategories = prevDist.userCategories.map((cat) => DistributionCategory(
@@ -1034,78 +1113,17 @@ class DatabaseService implements DatabaseServiceInterface {
         id: '$currentYear-$currentMonth',
         month: currentMonth,
         year: currentYear,
-        monthlyIncome: actualPrevIncome.toDouble(),
+        monthlyIncome: newIncome,
         categories: newCategories,
       );
       await insertDistribution(currentDist);
     }
 
     if (!_redistributionEnabled || prevDist == null) return;
+    if (totalRedistributed <= 0) return;
 
-    // Only redistribute if today >= redistribution day and not yet applied
-    bool alreadyApplied = prevDist.categories
-        .where((c) => !c.isAutomatic)
-        .every((c) => c.redistributionApplied);
-    if (alreadyApplied) return;
-
-    final actualPrevIncome = prevDist.monthlyIncome;
-    if (actualPrevIncome <= 0) return;
-
-    double totalFixedExpenses = 0;
-    for (final cat in prevDist.userCategories) {
-      if (cat.isFixed) {
-        totalFixedExpenses += cat.fixedAmount ?? 0;
-      }
-    }
-    if (totalFixedExpenses >= actualPrevIncome) return;
-
-    final totalActualSpent = prevDist.totalSpent;
-    if (totalActualSpent >= actualPrevIncome) return;
-    final netSavings = actualPrevIncome - totalActualSpent;
-
-    var modified = false;
-    double totalRedistributed = 0;
-    final Map<String, double> redistributionByTarget = {};
-    final List<int> appliedPrevIndices = [];
-    final prevCategories = List<DistributionCategory>.from(prevDist.categories);
+    // Apply redistribution to current month categories
     final currentCategories = List<DistributionCategory>.from(currentDist.categories);
-
-    for (int pi = 0; pi < prevCategories.length; pi++) {
-      final prevCat = prevCategories[pi];
-      if (prevCat.redistributionApplied) continue;
-
-      final config = _redistributionConfigs[prevCat.name];
-      final catDay = config?.redistributionDay ?? _globalRedistributionDay;
-
-      if (today < catDay) continue;
-
-      if (!prevCat.isEnabled && !prevCat.isAutomatic) continue;
-
-      final unspent = prevDist.getCategoryUnspentBase(prevCat);
-      if (unspent <= 0) continue;
-
-      final percentages = config?.redistributionPercentages.isNotEmpty == true
-          ? config!.redistributionPercentages
-          : (prevCat.redistributionPercentages.isNotEmpty
-              ? prevCat.redistributionPercentages
-              : {prevCat.name: 100.0});
-
-      for (final entry in percentages.entries) {
-        final amount = unspent * entry.value / 100;
-        redistributionByTarget[entry.key] =
-            (redistributionByTarget[entry.key] ?? 0) + amount;
-        totalRedistributed += amount;
-      }
-
-      appliedPrevIndices.add(pi);
-    }
-
-    if (totalRedistributed > netSavings && netSavings > 0) {
-      final factor = netSavings / totalRedistributed;
-      for (final key in redistributionByTarget.keys) {
-        redistributionByTarget[key] = redistributionByTarget[key]! * factor;
-      }
-    }
 
     for (final entry in redistributionByTarget.entries) {
       final idx = currentCategories.indexWhere((c) => c.name == entry.key);
@@ -1120,14 +1138,11 @@ class DatabaseService implements DatabaseServiceInterface {
     for (final pi in appliedPrevIndices) {
       prevCategories[pi] = prevCategories[pi].copyWith(redistributionApplied: true);
     }
-    modified = appliedPrevIndices.isNotEmpty;
-
-    if (!modified) return;
 
     final updatedPrevDist = prevDist.copyWith(categories: prevCategories);
     final updatedCurrentDist = currentDist.copyWith(
       categories: currentCategories,
-      // Add redistributed amount to monthlyIncome for new period
+      // Add redistributed amount to income
       monthlyIncome: currentDist.monthlyIncome + totalRedistributed,
     );
 
