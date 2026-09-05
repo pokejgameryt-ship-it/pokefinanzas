@@ -1013,6 +1013,7 @@ class DatabaseService implements DatabaseServiceInterface {
 
     // Calculate redistribution from previous month FIRST
     double totalRedistributed = 0;
+    double unallocatedCarryOver = 0; // Money not redistributed (percentages < 100%)
     final Map<String, double> redistributionByTarget = {};
     final List<int> appliedPrevIndices = [];
     final List<DistributionCategory> prevCategories = prevDist != null
@@ -1059,11 +1060,19 @@ class DatabaseService implements DatabaseServiceInterface {
                         ? prevCat.redistributionPercentages
                         : {prevCat.name: 100.0});
 
+                // Sum of configured percentages
+                final totalPercent = percentages.values.fold(0.0, (a, b) => a + b);
+
                 for (final entry in percentages.entries) {
                   final amount = unspent * entry.value / 100;
                   redistributionByTarget[entry.key] =
                       (redistributionByTarget[entry.key] ?? 0) + amount;
                   totalRedistributed += amount;
+                }
+
+                // Track unallocated money (percentages < 100%)
+                if (totalPercent < 100) {
+                  unallocatedCarryOver += unspent * (100 - totalPercent) / 100;
                 }
 
                 appliedPrevIndices.add(pi);
@@ -1075,6 +1084,7 @@ class DatabaseService implements DatabaseServiceInterface {
                   redistributionByTarget[key] = redistributionByTarget[key]! * factor;
                 }
                 totalRedistributed = netSavings;
+                unallocatedCarryOver = 0; // Capped at net savings
               }
             }
           }
@@ -1085,9 +1095,9 @@ class DatabaseService implements DatabaseServiceInterface {
     // Now create or load current month distribution
     var currentDist = await getDistribution(currentMonth, currentYear);
     if (currentDist == null) {
-      // New month: income = prev month's income + redistribution received
+      // New month: income = prev month's income + redistribution + unallocated carry over
       final prevIncome = prevDist?.monthlyIncome ?? 0.0;
-      final newIncome = prevIncome + totalRedistributed;
+      final newIncome = prevIncome + totalRedistributed + unallocatedCarryOver;
 
       List<DistributionCategory> newCategories;
       if (prevDist != null) {
@@ -1120,7 +1130,7 @@ class DatabaseService implements DatabaseServiceInterface {
     }
 
     if (!_redistributionEnabled || prevDist == null) return;
-    if (totalRedistributed <= 0) return;
+    if (totalRedistributed <= 0 && unallocatedCarryOver <= 0) return;
 
     // Apply redistribution to current month categories
     final currentCategories = List<DistributionCategory>.from(currentDist.categories);
@@ -1142,8 +1152,8 @@ class DatabaseService implements DatabaseServiceInterface {
     final updatedPrevDist = prevDist.copyWith(categories: prevCategories);
     final updatedCurrentDist = currentDist.copyWith(
       categories: currentCategories,
-      // Add redistributed amount to income
-      monthlyIncome: currentDist.monthlyIncome + totalRedistributed,
+      // Add redistributed + unallocated carry over to income
+      monthlyIncome: currentDist.monthlyIncome + totalRedistributed + unallocatedCarryOver,
     );
 
     await insertDistribution(updatedCurrentDist);
