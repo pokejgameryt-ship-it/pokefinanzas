@@ -353,7 +353,11 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalCashIncome() async {
     double total = 0;
     for (final i in _incomes) {
-      if (i.isCashTransfer) continue;
+      if (i.isCashTransfer) {
+        // ATM transfer to cash counts for cash balance
+        if (i.isCash) total += i.totalAmount;
+        continue;
+      }
       if (i.isCash) total += i.totalAmount;
     }
     return total;
@@ -364,6 +368,11 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final e in _expenses) {
       if (e.isTransfer) continue;
+      if (e.isCashTransfer) {
+        // ATM withdrawal to cash counts for cash balance
+        if (e.isCash) total += e.amount;
+        continue;
+      }
       if (e.isCash) total += e.amount;
     }
     return total;
@@ -373,7 +382,11 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getTotalBankIncome() async {
     double total = 0;
     for (final i in _incomes) {
-      if (i.isCashTransfer) continue;
+      if (i.isCashTransfer) {
+        // ATM transfer to bank counts for bank balance
+        if (!i.isCash) total += i.totalAmount;
+        continue;
+      }
       if (!i.isCash) total += i.totalAmount;
     }
     return total;
@@ -384,6 +397,11 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final e in _expenses) {
       if (e.isTransfer) continue;
+      if (e.isCashTransfer) {
+        // ATM withdrawal from bank counts for bank balance
+        if (!e.isCash) total += e.amount;
+        continue;
+      }
       if (!e.isCash) total += e.amount;
     }
     return total;
@@ -393,7 +411,10 @@ class DatabaseService implements DatabaseServiceInterface {
   Future<double> getCashIncomeByMonth(int month, int year) async {
     double total = 0;
     for (final i in await getIncomesByMonth(month, year)) {
-      if (i.isCashTransfer) continue;
+      if (i.isCashTransfer) {
+        if (i.isCash) total += i.totalAmount;
+        continue;
+      }
       if (i.isCash) total += i.totalAmount;
     }
     return total;
@@ -404,7 +425,10 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final e in await getExpensesByMonth(month, year)) {
       if (e.isTransfer) continue;
-      if (e.isCashTransfer) continue;
+      if (e.isCashTransfer) {
+        if (e.isCash) total += e.amount;
+        continue;
+      }
       if (e.isCash) total += e.amount;
     }
     return total;
