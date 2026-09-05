@@ -980,13 +980,12 @@ class DatabaseService implements DatabaseServiceInterface {
     final prevMonth = currentMonth == 1 ? 12 : currentMonth - 1;
     final prevYear = currentMonth == 1 ? currentYear - 1 : currentYear;
 
-    final actualPrevIncome = await getTotalIncomeByMonth(prevMonth, prevYear);
-    if (actualPrevIncome <= 0) return;
-
     final prevDist = await getDistribution(prevMonth, prevYear);
 
     var currentDist = await getDistribution(currentMonth, currentYear);
     if (currentDist == null) {
+      // Only create if doesn't exist — don't overwrite existing
+      final actualPrevIncome = prevDist != null ? prevDist.monthlyIncome : 0;
       List<DistributionCategory> newCategories;
       if (prevDist != null) {
         newCategories = prevDist.userCategories.map((cat) => DistributionCategory(
@@ -1011,16 +1010,22 @@ class DatabaseService implements DatabaseServiceInterface {
         id: '$currentYear-$currentMonth',
         month: currentMonth,
         year: currentYear,
-        monthlyIncome: actualPrevIncome,
+        monthlyIncome: actualPrevIncome.toDouble(),
         categories: newCategories,
       );
-      await insertDistribution(currentDist);
-    } else if (currentDist.monthlyIncome != actualPrevIncome) {
-      currentDist = currentDist.copyWith(monthlyIncome: actualPrevIncome);
       await insertDistribution(currentDist);
     }
 
     if (!_redistributionEnabled || prevDist == null) return;
+
+    // Only redistribute if today >= redistribution day and not yet applied
+    bool alreadyApplied = prevDist.categories
+        .where((c) => !c.isAutomatic)
+        .every((c) => c.redistributionApplied);
+    if (alreadyApplied) return;
+
+    final actualPrevIncome = prevDist.monthlyIncome;
+    if (actualPrevIncome <= 0) return;
 
     double totalFixedExpenses = 0;
     for (final cat in prevDist.userCategories) {
@@ -1096,7 +1101,11 @@ class DatabaseService implements DatabaseServiceInterface {
     if (!modified) return;
 
     final updatedPrevDist = prevDist.copyWith(categories: prevCategories);
-    final updatedCurrentDist = currentDist.copyWith(categories: currentCategories);
+    final updatedCurrentDist = currentDist.copyWith(
+      categories: currentCategories,
+      // Add redistributed amount to monthlyIncome for new period
+      monthlyIncome: currentDist.monthlyIncome + totalRedistributed,
+    );
 
     await insertDistribution(updatedCurrentDist);
     await updateDistribution(updatedPrevDist);
