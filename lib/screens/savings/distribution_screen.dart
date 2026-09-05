@@ -89,11 +89,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       _redistributionConfigs = await _db.getRedistributionConfigs();
       _redistributionPresets = await _db.getRedistributionPresets();
 
-      // Current balance = all income - all expenses (the money we have NOW)
-      final totalIncome = await _db.getTotalIncomeAll();
-      final totalExpenses = await _db.getTotalExpensesAll();
-      final currentBalance = totalIncome - totalExpenses;
-
       SavingsDistribution? dist;
       try {
         dist = await _db.getDistribution(month, year);
@@ -101,7 +96,12 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = null;
       }
 
+      // Only create distribution if it doesn't exist yet
       if (dist == null) {
+        final totalIncome = await _db.getTotalIncomeAll();
+        final totalExpenses = await _db.getTotalExpensesAll();
+        final currentBalance = totalIncome - totalExpenses;
+
         dist = SavingsDistribution(
           id: const Uuid().v4(),
           month: month,
@@ -116,16 +116,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           ],
         );
         await _db.insertDistribution(dist);
-      } else {
-        // Reset: current balance as income, spent=0, no redistribution
-        final resetCategories = dist.categories.map((cat) =>
-          cat.copyWith(spentAmount: 0, totalRedistributionReceived: 0)
-        ).toList();
-        dist = dist.copyWith(
-          monthlyIncome: currentBalance,
-          categories: resetCategories,
-        );
-        await _db.insertDistribution(dist);
       }
 
       // Ensure Ahorro category exists
@@ -137,6 +127,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           isAutomatic: true,
         ));
         dist = dist.copyWith(categories: cats);
+        await _db.insertDistribution(dist);
       }
 
       final Map<String, double> redistributionReceived = {};
