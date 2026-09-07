@@ -139,10 +139,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         await _db.insertDistribution(dist);
       }
 
-      // Calculate spent amounts from actual expenses
+      // Calculate spent amounts from actual expenses (ONLY from today onwards)
       final allExpenses = await _db.getAllExpenses();
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day);
       double transfersToSavings = 0;
       for (final expense in allExpenses) {
+        if (expense.date.isBefore(todayStart)) continue; // Skip historical
         if (expense.isTransfer && expense.transferTo == 'Ahorro') {
           transfersToSavings += expense.amount;
         }
@@ -154,6 +157,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         }
         double spent = 0;
         for (final expense in allExpenses) {
+          if (expense.date.isBefore(todayStart)) continue; // Skip historical
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
           if (expense.category == cat.name ||
