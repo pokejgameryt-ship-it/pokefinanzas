@@ -139,13 +139,41 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         await _db.insertDistribution(dist);
       }
 
+      // Calculate spent amounts from actual expenses
+      final allExpenses = await _db.getAllExpenses();
+      double transfersToSavings = 0;
+      for (final expense in allExpenses) {
+        if (expense.isTransfer && expense.transferTo == 'Ahorro') {
+          transfersToSavings += expense.amount;
+        }
+      }
+
+      final updatedCategories = dist.categories.map((cat) {
+        if (cat.isAutomatic) {
+          return cat.copyWith(spentAmount: transfersToSavings);
+        }
+        double spent = 0;
+        for (final expense in allExpenses) {
+          if (expense.isTransfer) continue;
+          if (expense.category == 'Cajero') continue;
+          if (expense.category == cat.name ||
+              (expense.isRecurring && expense.recurringName == cat.name)) {
+            spent += expense.amount;
+          }
+        }
+        return cat.copyWith(spentAmount: spent);
+      }).toList();
+
+      final updatedDist = dist.copyWith(categories: updatedCategories);
+      // Only save if spent amounts changed
+      await _db.insertDistribution(updatedDist);
+
       // Calculate redistribution received from previous month
       double prevRedistribution = 0;
       final Map<String, double> redistributionReceived = {};
       try {
         prevRedistribution = await _db.calculateRedistributionForMonth(month, year);
-        // Check if redistribution was already applied
-        for (final cat in dist.userCategories) {
+        for (final cat in updatedDist.userCategories) {
           if (cat.totalRedistributionReceived > 0) {
             redistributionReceived[cat.name] = cat.totalRedistributionReceived;
           }
@@ -154,9 +182,9 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       if (mounted) {
         setState(() {
-          _currentDistribution = dist;
+          _currentDistribution = updatedDist;
           _previousMonthRedistribution = prevRedistribution;
-          _transfersToSavings = 0;
+          _transfersToSavings = transfersToSavings;
           _redistributionReceivedMap = redistributionReceived;
           _isLoading = false;
         });
