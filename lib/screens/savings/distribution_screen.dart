@@ -144,6 +144,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
               isAutomatic: true,
             ),
           ],
+          periodStartDate: DateTime(year, month, DateTime.now().day),
         );
         await _db.insertDistribution(dist);
       }
@@ -160,13 +161,12 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         await _db.insertDistribution(dist);
       }
 
-      // Calculate spent amounts from actual expenses (ONLY from today onwards)
+      // Calculate spent amounts from actual expenses (from period start)
       final allExpenses = await _db.getAllExpenses();
-      final today = DateTime.now();
-      final todayStart = DateTime(today.year, today.month, today.day);
+      final periodStart = dist.periodStartDate ?? DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
       double transfersToSavings = 0;
       for (final expense in allExpenses) {
-        if (expense.date.isBefore(todayStart)) continue; // Skip historical
+        if (expense.date.isBefore(periodStart)) continue;
         if (expense.isTransfer && expense.transferTo == 'Ahorro') {
           transfersToSavings += expense.amount;
         }
@@ -179,7 +179,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         }
         double spent = 0;
         for (final expense in allExpenses) {
-          if (expense.date.isBefore(todayStart)) continue; // Skip historical
+          if (expense.date.isBefore(periodStart)) continue;
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
           if (expense.category == cat.name ||
@@ -233,6 +233,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                 isAutomatic: true,
               ),
             ],
+            periodStartDate: DateTime.now(),
           );
           _isLoading = false;
         });

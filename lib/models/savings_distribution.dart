@@ -120,6 +120,7 @@ class SavingsDistribution {
   final int year;
   final double monthlyIncome;
   final List<DistributionCategory> categories;
+  final DateTime? periodStartDate;
 
   SavingsDistribution({
     required this.id,
@@ -127,6 +128,7 @@ class SavingsDistribution {
     required this.year,
     required this.monthlyIncome,
     required this.categories,
+    this.periodStartDate,
   });
 
   static final DistributionCategory _defaultSavings = DistributionCategory(
@@ -270,10 +272,17 @@ class SavingsDistribution {
       'year': year,
       'monthlyIncome': monthlyIncome,
       'categories': categories.map((c) => c.toMap()).toList(),
+      if (periodStartDate != null) 'periodStartDate': periodStartDate!.toIso8601String(),
     };
   }
 
   factory SavingsDistribution.fromMap(Map<String, dynamic> map) {
+    DateTime? parsedDate;
+    if (map['periodStartDate'] != null) {
+      try {
+        parsedDate = DateTime.parse(map['periodStartDate']);
+      } catch (_) {}
+    }
     return SavingsDistribution(
       id: map['id'],
       month: map['month'],
@@ -282,6 +291,7 @@ class SavingsDistribution {
       categories: (map['categories'] as List)
           .map((c) => DistributionCategory.fromMap(c))
           .toList(),
+      periodStartDate: parsedDate,
     );
   }
 
@@ -291,6 +301,7 @@ class SavingsDistribution {
     int? year,
     double? monthlyIncome,
     List<DistributionCategory>? categories,
+    DateTime? periodStartDate,
   }) {
     return SavingsDistribution(
       id: id ?? this.id,
@@ -298,6 +309,7 @@ class SavingsDistribution {
       year: year ?? this.year,
       monthlyIncome: monthlyIncome ?? this.monthlyIncome,
       categories: categories ?? this.categories,
+      periodStartDate: periodStartDate ?? this.periodStartDate,
     );
   }
 }

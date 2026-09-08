@@ -1125,6 +1125,7 @@ class DatabaseService implements DatabaseServiceInterface {
         year: currentYear,
         monthlyIncome: newIncome,
         categories: newCategories,
+        periodStartDate: DateTime(currentYear, currentMonth, _globalRedistributionDay),
       );
       await insertDistribution(currentDist);
     }
