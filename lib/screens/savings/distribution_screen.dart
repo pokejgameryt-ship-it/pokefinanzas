@@ -31,6 +31,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
   List<RedistributionPreset> _redistributionPresets = [];
   double _transfersToSavings = 0;
   Map<String, double> _redistributionReceivedMap = {};
+  Map<String, double> _manualAdjustments = {};
 
   @override
   void initState() {
@@ -61,11 +62,31 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
+    final adjustmentsRaw = prefs.getStringList('manual_adjustments') ?? [];
+    final adjustments = <String, double>{};
+    for (final entry in adjustmentsRaw) {
+      final parts = entry.split(':');
+      if (parts.length == 2) {
+        final key = parts[0];
+        final value = double.tryParse(parts[1]) ?? 0;
+        if (value != 0) adjustments[key] = value;
+      }
+    }
     if (mounted) {
       setState(() {
         _isWeeklyView = prefs.getBool('budget_weekly_view') ?? false;
+        _manualAdjustments = adjustments;
       });
     }
+  }
+
+  Future<void> _saveManualAdjustments() async {
+    final prefs = await SharedPreferences.getInstance();
+    final entries = _manualAdjustments.entries
+        .where((e) => e.value != 0)
+        .map((e) => '${e.key}:${e.value}')
+        .toList();
+    await prefs.setStringList('manual_adjustments', entries);
   }
 
   Future<void> _toggleBudgetView(bool isWeekly) async {
@@ -153,7 +174,8 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       final updatedCategories = dist.categories.map((cat) {
         if (cat.isAutomatic) {
-          return cat.copyWith(spentAmount: transfersToSavings);
+          final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
+          return cat.copyWith(spentAmount: transfersToSavings + adjustment);
         }
         double spent = 0;
         for (final expense in allExpenses) {
@@ -165,6 +187,9 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
             spent += expense.amount;
           }
         }
+        // Apply manual adjustment
+        final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
+        spent += adjustment;
         return cat.copyWith(spentAmount: spent);
       }).toList();
 
@@ -702,12 +727,12 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                       onPressed: () async {
                         final amount = double.tryParse(controller.text) ?? 0;
                         if (amount <= 0) return;
-                        final newSpent = isAdding
-                            ? (currentSpent + amount).toDouble()
-                            : (currentSpent - amount).clamp(0, double.infinity).toDouble();
-                        final cats = List<DistributionCategory>.from(dist.categories);
-                        cats[categoryIndex] = cats[categoryIndex].copyWith(spentAmount: newSpent);
-                        await _saveDistribution(dist.copyWith(categories: cats));
+                        final adjustmentKey = '${cat.name}_${dist.month}_${dist.year}';
+                        final currentAdjustment = _manualAdjustments[adjustmentKey] ?? 0;
+                        final delta = isAdding ? amount : -amount;
+                        _manualAdjustments[adjustmentKey] = currentAdjustment + delta;
+                        await _saveManualAdjustments();
+                        await _loadData();
                         if (ctx.mounted) Navigator.pop(ctx);
                       },
                       child: const Text('Aplicar'),
