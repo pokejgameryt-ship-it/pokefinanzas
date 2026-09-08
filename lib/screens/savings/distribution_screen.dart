@@ -620,6 +620,109 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
     );
   }
 
+  void _showManualAdjustDialog(int categoryIndex) {
+    final dist = _currentDistribution!;
+    final cat = dist.categories[categoryIndex];
+    if (cat.isAutomatic) return;
+
+    final currentSpent = cat.spentAmount;
+    final controller = TextEditingController(text: currentSpent.toStringAsFixed(2));
+    bool isAdding = true;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom,
+            left: 24, right: 24, top: 24,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 40, height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Ajustar gasto manual: ${cat.name}',
+                style: Theme.of(ctx).textTheme.titleLarge,
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Gasto actual: ${Formatters.formatCurrency(currentSpent)}',
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('Sumar'), icon: Icon(Icons.add)),
+                  ButtonSegment(value: false, label: Text('Restar'), icon: Icon(Icons.remove)),
+                ],
+                selected: {isAdding},
+                onSelectionChanged: (s) => setModalState(() => isAdding = s.first),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Cantidad',
+                  border: OutlineInputBorder(),
+                  prefixText: '€ ',
+                ),
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancelar'),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: FilledButton(
+                      onPressed: () async {
+                        final amount = double.tryParse(controller.text) ?? 0;
+                        if (amount <= 0) return;
+                        final newSpent = isAdding
+                            ? (currentSpent + amount).toDouble()
+                            : (currentSpent - amount).clamp(0, double.infinity).toDouble();
+                        final cats = List<DistributionCategory>.from(dist.categories);
+                        cats[categoryIndex] = cats[categoryIndex].copyWith(spentAmount: newSpent);
+                        await _saveDistribution(dist.copyWith(categories: cats));
+                        if (ctx.mounted) Navigator.pop(ctx);
+                      },
+                      child: const Text('Aplicar'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _toggleCategoryEnabled(int index, bool value) {
     final cat = _currentDistribution!.categories[index];
     if (cat.isAutomatic) return;
@@ -1866,6 +1969,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       child: InkWell(
         onTap: () => _showCategoryRedistributionDialog(index),
+        onLongPress: () => _showManualAdjustDialog(index),
         borderRadius: BorderRadius.circular(12),
         child: Padding(
           padding: const EdgeInsets.all(16),
