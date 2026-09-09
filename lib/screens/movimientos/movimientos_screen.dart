@@ -86,6 +86,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       for (final e in expenses) {
         if (e.isTransfer) continue;
         if (e.category == 'Cajero') continue;
+        if (e.category == 'Ahorro') continue;
         if (periodDates != null) {
           if (e.date.isBefore(periodDates.$1) || e.date.isAfter(periodDates.$2)) continue;
         }
@@ -1704,7 +1705,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                                 .where((m) => m.isIncome)
                                 .fold<double>(0, (sum, m) => sum + m.amount);
                             final dayExpense = dayMovements
-                                .where((m) => !m.isIncome)
+                                .where((m) => !m.isIncome && m.expense?.category != 'Ahorro')
                                 .fold<double>(0, (sum, m) => sum + m.amount);
                             final dayBalance = dayIncome - dayExpense;
 
