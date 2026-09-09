@@ -166,7 +166,10 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       double transfersToSavings = 0;
       for (final expense in allExpenses) {
         if (expense.date.isBefore(periodStart)) continue;
+        // Count transfers to Ahorro AND regular expenses with category "Ahorro"
         if (expense.isTransfer && expense.transferTo == 'Ahorro') {
+          transfersToSavings += expense.amount;
+        } else if (expense.category == 'Ahorro') {
           transfersToSavings += expense.amount;
         }
       }
@@ -181,6 +184,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           if (expense.date.isBefore(periodStart)) continue;
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
+          if (expense.category == 'Ahorro') continue;
           if (expense.category == cat.name ||
               (expense.isRecurring && expense.recurringName == cat.name)) {
             spent += expense.amount;

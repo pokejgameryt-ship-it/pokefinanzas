@@ -980,6 +980,8 @@ class DatabaseService implements DatabaseServiceInterface {
         for (final exp in expenses) {
           if (exp.isTransfer && exp.transferTo == 'Ahorro') {
             transfers += exp.amount;
+          } else if (exp.category == 'Ahorro') {
+            transfers += exp.amount;
           }
         }
         return cat.copyWith(spentAmount: transfers);
@@ -988,6 +990,7 @@ class DatabaseService implements DatabaseServiceInterface {
       for (final exp in expenses) {
         if (exp.isTransfer) continue;
         if (exp.category == 'Cajero') continue;
+        if (exp.category == 'Ahorro') continue;
         if (exp.category == cat.name ||
             (exp.isRecurring && exp.recurringName == cat.name)) {
           spent += exp.amount;
