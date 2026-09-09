@@ -95,7 +95,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
           _totalExpenses = results[1] as double;
           _incomeCount = (results[2] as List).length;
           _expenseCount = (results[3] as List).length;
-          _totalBalance = results[4] as double;
+          _totalBalance = (results[4] as double) + totalAhorroSpent;
           _weeklyIncome = results[5] as double;
           _weeklyExpenses = results[6] as double;
           _activeGoal = results[7] as Goal?;
@@ -211,6 +211,32 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         ),
                                         Text(
                                           Formatters.formatCurrency(_totalCashIncome - _totalCashExpense),
+                                          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                                color: colorScheme.onPrimary,
+                                                fontWeight: FontWeight.bold,
+                                              ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Container(
+                                    width: 1,
+                                    height: 36,
+                                    color: colorScheme.onPrimary.withValues(alpha: 0.3),
+                                  ),
+                                  Expanded(
+                                    child: Column(
+                                      children: [
+                                        const Icon(Icons.savings, color: Color(0xFF4CAF50), size: 18),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Ahorro',
+                                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                                color: colorScheme.onPrimary.withValues(alpha: 0.7),
+                                              ),
+                                        ),
+                                        Text(
+                                          Formatters.formatCurrency(_totalAhorroSpent),
                                           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                                                 color: colorScheme.onPrimary,
                                                 fontWeight: FontWeight.bold,

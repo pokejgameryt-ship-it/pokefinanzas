@@ -30,7 +30,7 @@ class MovimientosScreen extends StatefulWidget {
 }
 
 enum SummaryPeriod { global, year, month, week }
-enum CashFilter { all, cash, bank }
+enum CashFilter { all, cash, bank, ahorro }
 
 class _MovimientosScreenState extends State<MovimientosScreen> {
   final _db = DatabaseService.instance;
@@ -812,12 +812,31 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       ),
                     ),
                   ],
-                  SwitchListTile(
-                    title: const Text('Efectivo'),
-                    subtitle: const Text('El pago es en físico'),
-                    value: isCash,
-                    onChanged: (value) => setModalState(() => isCash = value),
-                    contentPadding: EdgeInsets.zero,
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(value: 'banco', label: Text('Banco'), icon: Icon(Icons.account_balance_rounded, size: 18)),
+                      ButtonSegment(value: 'efectivo', label: Text('Efectivo'), icon: Icon(Icons.money_rounded, size: 18)),
+                      ButtonSegment(value: 'ahorro', label: Text('Ahorro'), icon: Icon(Icons.savings, size: 18)),
+                    ],
+                    selected: {
+                      isCash ? 'efectivo' : (selectedCategory == 'Ahorro' ? 'ahorro' : 'banco')
+                    },
+                    onSelectionChanged: (selection) {
+                      final value = selection.first;
+                      setModalState(() {
+                        if (value == 'efectivo') {
+                          isCash = true;
+                          if (selectedCategory == 'Ahorro') selectedCategory = '';
+                        } else if (value == 'ahorro') {
+                          isCash = false;
+                          selectedCategory = 'Ahorro';
+                          selectedTransferTo = 'Ahorro';
+                        } else {
+                          isCash = false;
+                          if (selectedCategory == 'Ahorro') selectedCategory = '';
+                        }
+                      });
+                    },
                   ),
                 ],
 
@@ -978,9 +997,9 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                                 ? null
                                 : recurringNameController.text
                             : null,
-                        transferTo: selectedCategory == 'Transferencia' && selectedTransferTo.isNotEmpty
+                        transferTo: (selectedCategory == 'Transferencia' && selectedTransferTo.isNotEmpty)
                             ? selectedTransferTo
-                            : null,
+                            : (selectedCategory == 'Ahorro' ? 'Ahorro' : null),
                         isCash: isCash,
                         tags: selectedTags,
                       );
@@ -1363,6 +1382,8 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       filtered = filtered.where((m) => m.isCash).toList();
     } else if (_cashFilter == CashFilter.bank) {
       filtered = filtered.where((m) => !m.isCash).toList();
+    } else if (_cashFilter == CashFilter.ahorro) {
+      filtered = filtered.where((m) => !m.isIncome && m.expense?.category == 'Ahorro').toList();
     }
 
     // Group movements by date
@@ -1576,6 +1597,16 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                                 isSelected: _cashFilter == CashFilter.bank,
                                 onTap: () => setState(() {
                                   _cashFilter = _cashFilter == CashFilter.bank ? CashFilter.all : CashFilter.bank;
+                                }),
+                              ),
+                              const SizedBox(width: 8),
+                              FilterPill(
+                                label: 'Ahorro',
+                                icon: Icons.savings,
+                                iconColor: const Color(0xFF4CAF50),
+                                isSelected: _cashFilter == CashFilter.ahorro,
+                                onTap: () => setState(() {
+                                  _cashFilter = _cashFilter == CashFilter.ahorro ? CashFilter.all : CashFilter.ahorro;
                                 }),
                               ),
                             ],
