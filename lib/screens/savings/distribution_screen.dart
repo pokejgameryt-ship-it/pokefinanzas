@@ -144,7 +144,6 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
               isAutomatic: true,
             ),
           ],
-          periodStartDate: DateTime(year, month, DateTime.now().day),
         );
         await _db.insertDistribution(dist);
       }
@@ -163,7 +162,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       // Calculate spent amounts from actual expenses (from period start)
       final allExpenses = await _db.getAllExpenses();
-      final periodStart = dist.periodStartDate ?? DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day);
+      final periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
       double transfersToSavings = 0;
       for (final expense in allExpenses) {
         if (expense.date.isBefore(periodStart)) continue;

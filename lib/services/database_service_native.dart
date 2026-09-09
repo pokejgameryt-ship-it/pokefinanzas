@@ -1125,7 +1125,6 @@ class DatabaseService implements DatabaseServiceInterface {
         year: currentYear,
         monthlyIncome: newIncome,
         categories: newCategories,
-        periodStartDate: DateTime(currentYear, currentMonth, _globalRedistributionDay),
       );
       await insertDistribution(currentDist);
     }
@@ -1155,6 +1154,7 @@ class DatabaseService implements DatabaseServiceInterface {
       categories: currentCategories,
       // Add redistributed + unallocated carry over to income
       monthlyIncome: currentDist.monthlyIncome + totalRedistributed + unallocatedCarryOver,
+      periodStartDate: DateTime.now(),
     );
 
     await insertDistribution(updatedCurrentDist);
