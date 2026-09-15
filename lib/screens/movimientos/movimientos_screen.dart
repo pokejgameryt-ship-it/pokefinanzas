@@ -1030,12 +1030,13 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       }
 
                       // Create paired income for Ahorro transfers
-                      if (_isAhorroExpense && existing == null) {
+                      // Only create paired income for Banco→Ahorro transfer, NOT for spending from Ahorro
+                      if (_isAhorroIncome && existing == null) {
                         final ahorroIncome = DailyIncome(
                           id: const Uuid().v4(),
                           date: selectedDate,
                           totalAmount: amount,
-                          notes: _isAhorroIncome ? 'Ahorro: Banco a Ahorro' : 'Ahorro: Ahorro a Banco',
+                          notes: 'Ahorro: Banco a Ahorro',
                           type: 'ahorro',
                           isCash: false,
                         );

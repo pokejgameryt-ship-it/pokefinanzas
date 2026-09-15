@@ -165,27 +165,17 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       final allIncomes = await _db.getAllIncomes();
       final periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
 
-      // Ahorro: net balance = money OUT - money IN
-      // Money IN = Bank→Ahorro transfers
-      // Money OUT = Ahorro→Bank transfers + regular Ahorro spending
+      // Ahorro: only track Bank→Ahorro transfers (money going INTO Ahorro)
+      // Spending from Ahorro does NOT affect distribution
       double ahorroIn = 0;
-      double ahorroOut = 0;
       for (final income in allIncomes) {
         if (income.date.isBefore(periodStart)) continue;
         if (income.isAhorroTransfer && income.notes!.contains('Banco a Ahorro')) {
           ahorroIn += income.totalAmount;
         }
       }
-      for (final expense in allExpenses) {
-        if (expense.date.isBefore(periodStart)) continue;
-        if (expense.isTransfer && expense.transferTo == 'Ahorro') {
-          ahorroOut += expense.amount;
-        } else if (expense.category == 'Ahorro') {
-          ahorroOut += expense.amount;
-        }
-      }
-      // spentAmount = net outflow from Ahorro (positive = money left, negative = money came in)
-      double transfersToSavings = ahorroOut - ahorroIn;
+      // spentAmount = money directed TO Ahorro (negative = money went to Ahorro)
+      double transfersToSavings = -ahorroIn;
 
       final updatedCategories = dist.categories.map((cat) {
         if (cat.isAutomatic) {
