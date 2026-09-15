@@ -188,7 +188,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
           if (expense.date.isBefore(periodStart)) continue;
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
-          if (expense.category == 'Ahorro') continue;
+          if (expense.isAhorroTransfer) continue;
           if (expense.category == cat.name ||
               (expense.isRecurring && expense.recurringName == cat.name)) {
             spent += expense.amount;

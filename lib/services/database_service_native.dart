@@ -1000,7 +1000,7 @@ class DatabaseService implements DatabaseServiceInterface {
       for (final exp in expenses) {
         if (exp.isTransfer) continue;
         if (exp.category == 'Cajero') continue;
-        if (exp.category == 'Ahorro') continue;
+        if (exp.isAhorroTransfer) continue;
         if (exp.category == cat.name ||
             (exp.isRecurring && exp.recurringName == cat.name)) {
           spent += exp.amount;
