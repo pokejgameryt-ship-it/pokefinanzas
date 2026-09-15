@@ -150,6 +150,12 @@ class DatabaseService implements DatabaseServiceInterface {
     return total;
   }
 
+  Future<List<DailyIncome>> getIncomeListByDateRange(DateTime from, DateTime to) async {
+    return _incomes.where((i) =>
+        i.date.isAfter(from.subtract(const Duration(days: 1))) &&
+        i.date.isBefore(to.add(const Duration(days: 1)))).toList();
+  }
+
   @override
   Future<void> deleteIncome(String id) async {
     _incomes.removeWhere((i) => i.id == id);
@@ -335,11 +341,13 @@ class DatabaseService implements DatabaseServiceInterface {
     double income = 0;
     for (final i in _incomes) {
       if (i.isCashTransfer) continue;
+      if (i.isAhorroTransfer) continue;
       income += i.totalAmount;
     }
     double expenses = 0;
     for (final e in _expenses) {
       if (e.isCashTransfer) continue;
+      if (e.isAhorroTransfer) continue;
       expenses += e.amount;
     }
     return income - expenses;
@@ -359,10 +367,10 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final i in _incomes) {
       if (i.isCashTransfer) {
-        // ATM transfer to cash counts for cash balance
         if (i.isCash) total += i.totalAmount;
         continue;
       }
+      if (i.isAhorroTransfer) continue;
       if (i.isCash) total += i.totalAmount;
     }
     return total;
@@ -374,10 +382,10 @@ class DatabaseService implements DatabaseServiceInterface {
     for (final e in _expenses) {
       if (e.isTransfer) continue;
       if (e.isCashTransfer) {
-        // ATM withdrawal to cash counts for cash balance
         if (e.isCash) total += e.amount;
         continue;
       }
+      if (e.isAhorroTransfer) continue;
       if (e.isCash) total += e.amount;
     }
     return total;
@@ -388,10 +396,10 @@ class DatabaseService implements DatabaseServiceInterface {
     double total = 0;
     for (final i in _incomes) {
       if (i.isCashTransfer) {
-        // ATM transfer to bank counts for bank balance
         if (!i.isCash) total += i.totalAmount;
         continue;
       }
+      if (i.isAhorroTransfer) continue;
       if (!i.isCash) total += i.totalAmount;
     }
     return total;
@@ -403,10 +411,10 @@ class DatabaseService implements DatabaseServiceInterface {
     for (final e in _expenses) {
       if (e.isTransfer) continue;
       if (e.isCashTransfer) {
-        // ATM withdrawal from bank counts for bank balance
         if (!e.isCash) total += e.amount;
         continue;
       }
+      if (e.isAhorroTransfer) continue;
       if (!e.isCash) total += e.amount;
     }
     return total;
@@ -965,18 +973,28 @@ class DatabaseService implements DatabaseServiceInterface {
     var dist = await getDistribution(month, year);
     if (dist == null) return;
 
-    // Get expenses — use all expenses by default
+    // Get expenses and incomes — use all by default
     List<Expense> expenses;
+    List<DailyIncome> incomes;
     if (from != null && to != null) {
       expenses = await getExpenseListByDateRange(from, to);
+      incomes = await getIncomeListByDateRange(from, to);
     } else {
       expenses = await getAllExpenses();
+      incomes = await getAllIncomes();
     }
 
     // Recalculate per-category spent
     final updatedCategories = dist.categories.map((cat) {
       if (cat.isAutomatic) {
         double transfers = 0;
+        // Ahorro transfers IN (Bank→Ahorro) reduce spent
+        for (final inc in incomes) {
+          if (inc.isAhorroTransfer && inc.notes!.contains('Banco a Ahorro')) {
+            transfers -= inc.totalAmount;
+          }
+        }
+        // Ahorro expenses (Ahorro→Bank + regular) increase spent
         for (final exp in expenses) {
           if (exp.isTransfer && exp.transferTo == 'Ahorro') {
             transfers += exp.amount;

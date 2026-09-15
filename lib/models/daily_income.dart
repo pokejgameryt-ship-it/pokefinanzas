@@ -11,6 +11,7 @@ class DailyIncome {
   final bool isCash;
 
   bool get isCashTransfer => type == 'cajero';
+  bool get isAhorroTransfer => notes != null && notes!.startsWith('Ahorro:');
 
   DailyIncome({
     required this.id,

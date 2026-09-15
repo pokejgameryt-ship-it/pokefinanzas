@@ -77,9 +77,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _db.getTotalBankExpense(),
       ]);
 
-      // Ahorro: gasto real en categoría "Ahorro"
+      // Ahorro: balance = transfers in - transfers out - spending
       double totalAhorroSpent = 0;
       double monthAhorroSpent = 0;
+      // Ahorro transfers IN (Bank→Ahorro)
+      for (final i in await _db.getAllIncomes()) {
+        if (i.isAhorroTransfer && i.notes!.contains('Banco a Ahorro')) {
+          totalAhorroSpent -= i.totalAmount;
+          if (i.date.month == now.month && i.date.year == now.year) {
+            monthAhorroSpent -= i.totalAmount;
+          }
+        }
+      }
+      // Ahorro expenses (Ahorro→Bank + regular Ahorro spending)
       for (final e in await _db.getAllExpenses()) {
         if (e.category == 'Ahorro') {
           totalAhorroSpent += e.amount;

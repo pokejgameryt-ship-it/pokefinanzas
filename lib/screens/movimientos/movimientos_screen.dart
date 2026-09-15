@@ -77,6 +77,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       double summaryIncome = 0;
       for (final i in incomes) {
         if (i.type == 'cajero') continue;
+        if (i.isAhorroTransfer) continue;
         if (periodDates != null) {
           if (i.date.isBefore(periodDates.$1) || i.date.isAfter(periodDates.$2)) continue;
         }
@@ -86,7 +87,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       for (final e in expenses) {
         if (e.isTransfer) continue;
         if (e.category == 'Cajero') continue;
-        if (e.category == 'Ahorro') continue;
+        if (e.isAhorroTransfer) continue;
         if (periodDates != null) {
           if (e.date.isBefore(periodDates.$1) || e.date.isAfter(periodDates.$2)) continue;
         }
@@ -242,6 +243,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
     String selectedSubcategory = '';
     String selectedTransferTo = '';
     bool isSaving = false;
+    bool _isAhorroIncome = false;
     bool isCajeroCashToBank = true;
     List<String> selectedTags = List.from(existing?.expense?.tags ?? []);
 
@@ -839,11 +841,20 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       });
                     },
                   ),
+                  if (selectedCategory == 'Ahorro') ...[
+                    const SizedBox(height: 8),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment(value: 'gastar', label: Text('Gastar de Ahorro'), icon: Icon(Icons.savings, size: 18)),
+                        ButtonSegment(value: 'banco_ahorro', label: Text('Banco → Ahorro'), icon: Icon(Icons.account_balance_rounded, size: 18)),
+                      ],
+                      selected: {_isAhorroIncome ? 'banco_ahorro' : 'gastar'},
+                      onSelectionChanged: (selection) {
+                        setModalState(() => _isAhorroIncome = selection.first == 'banco_ahorro');
+                      },
+                    ),
+                  ],
                 ],
-
-                const SizedBox(height: 16),
-
-                // Fecha
                 OutlinedButton.icon(
                   onPressed: () async {
                     final picked = await showDatePicker(
@@ -991,7 +1002,9 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         category: selectedCategory,
                         subcategory: selectedSubcategory,
                         date: selectedDate,
-                        description: descriptionController.text.isEmpty ? null : descriptionController.text,
+                        description: selectedCategory == 'Ahorro'
+                            ? (_isAhorroIncome ? 'Ahorro: Banco a Ahorro' : 'Ahorro: Ahorro a Banco')
+                            : (descriptionController.text.isEmpty ? null : descriptionController.text),
                         isRecurring: isRecurring,
                         recurringName: isRecurring
                             ? recurringNameController.text.isEmpty
@@ -1009,6 +1022,19 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         await _db.insertExpense(newExpense);
                       } else {
                         await _db.updateExpense(newExpense);
+                      }
+
+                      // Create paired income for Ahorro transfers
+                      if (selectedCategory == 'Ahorro' && existing == null) {
+                        final ahorroIncome = DailyIncome(
+                          id: const Uuid().v4(),
+                          date: selectedDate,
+                          totalAmount: amount,
+                          notes: _isAhorroIncome ? 'Ahorro: Banco a Ahorro' : 'Ahorro: Ahorro a Banco',
+                          type: 'ahorro',
+                          isCash: false,
+                        );
+                        await _db.insertIncome(ahorroIncome);
                       }
 
                       // Check budget alerts for this category (skip transfers)
@@ -1702,10 +1728,10 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                             final dayMovements = grouped[key]!;
                             final firstDate = dayMovements.first.date;
                             final dayIncome = dayMovements
-                                .where((m) => m.isIncome)
+                                .where((m) => m.isIncome && !(m.income?.isAhorroTransfer ?? false))
                                 .fold<double>(0, (sum, m) => sum + m.amount);
                             final dayExpense = dayMovements
-                                .where((m) => !m.isIncome && m.expense?.category != 'Ahorro')
+                                .where((m) => !m.isIncome && !(m.expense?.isAhorroTransfer ?? false) && m.expense?.category != 'Ahorro')
                                 .fold<double>(0, (sum, m) => sum + m.amount);
                             final dayBalance = dayIncome - dayExpense;
 

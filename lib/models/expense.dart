@@ -27,6 +27,7 @@ class Expense {
 
   bool get isTransfer => category == 'Transferencia';
   bool get isCashTransfer => category == 'Cajero';
+  bool get isAhorroTransfer => category == 'Ahorro' && description != null && description!.startsWith('Ahorro:');
 
   Map<String, dynamic> toMap() {
     return {

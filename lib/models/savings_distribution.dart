@@ -174,8 +174,6 @@ class SavingsDistribution {
     for (final cat in enabledUserCategories) {
       total += cat.spentAmount;
     }
-    // Include Ahorro spending in total
-    total += savingsCategory.spentAmount;
     return total;
   }
 

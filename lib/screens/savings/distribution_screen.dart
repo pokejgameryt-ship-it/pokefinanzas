@@ -162,11 +162,19 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       // Calculate spent amounts from actual expenses (from period start)
       final allExpenses = await _db.getAllExpenses();
+      final allIncomes = await _db.getAllIncomes();
       final periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
       double transfersToSavings = 0;
+      // Ahorro transfers IN (Bank→Ahorro) reduce the "spent" (money coming in)
+      for (final income in allIncomes) {
+        if (income.date.isBefore(periodStart)) continue;
+        if (income.isAhorroTransfer && income.notes!.contains('Banco a Ahorro')) {
+          transfersToSavings -= income.totalAmount;
+        }
+      }
+      // Ahorro expenses (Ahorro→Bank + regular spending) increase "spent" (money going out)
       for (final expense in allExpenses) {
         if (expense.date.isBefore(periodStart)) continue;
-        // Count transfers to Ahorro AND regular expenses with category "Ahorro"
         if (expense.isTransfer && expense.transferTo == 'Ahorro') {
           transfersToSavings += expense.amount;
         } else if (expense.category == 'Ahorro') {
