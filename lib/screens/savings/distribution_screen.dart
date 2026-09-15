@@ -167,20 +167,21 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       // Ahorro: only track Bank→Ahorro transfers (money going INTO Ahorro)
       // Spending from Ahorro does NOT affect distribution
+      // No periodStartDate filter — include ALL transfers from the month
       double ahorroIn = 0;
       for (final income in allIncomes) {
-        if (income.date.isBefore(periodStart)) continue;
+        if (income.date.month != month || income.date.year != year) continue;
         if (income.isAhorroTransfer && income.notes!.contains('Banco a Ahorro')) {
           ahorroIn += income.totalAmount;
         }
       }
-      // spentAmount = money directed TO Ahorro (negative = money went to Ahorro)
-      double transfersToSavings = -ahorroIn;
+      // spentAmount = 0 for Ahorro (it's a separate bucket, not a distribution category)
+      // ahorroIn tracked separately for display purposes
 
       final updatedCategories = dist.categories.map((cat) {
         if (cat.isAutomatic) {
           final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
-          return cat.copyWith(spentAmount: transfersToSavings + adjustment);
+          return cat.copyWith(spentAmount: adjustment);
         }
         double spent = 0;
         for (final expense in allExpenses) {
@@ -219,7 +220,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         setState(() {
           _currentDistribution = updatedDist;
           _previousMonthRedistribution = prevRedistribution;
-          _transfersToSavings = transfersToSavings;
+          _transfersToSavings = ahorroIn;
           _redistributionReceivedMap = redistributionReceived;
           _isLoading = false;
         });

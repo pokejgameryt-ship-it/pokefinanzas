@@ -256,6 +256,12 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       selectedCategory = existing!.expense!.category;
       selectedSubcategory = existing!.expense!.subcategory;
       selectedTransferTo = existing!.expense!.transferTo ?? '';
+      // Detect Ahorro expense type
+      if (selectedCategory == 'Ahorro') {
+        _isAhorroExpense = true;
+        _isAhorroIncome = existing!.expense!.description != null &&
+            existing!.expense!.description!.startsWith('Ahorro: Banco a Ahorro');
+      }
     }
 
     showModalBottomSheet(
@@ -1007,8 +1013,8 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         category: _isAhorroExpense ? 'Ahorro' : selectedCategory,
                         subcategory: selectedSubcategory,
                         date: selectedDate,
-                        description: _isAhorroExpense
-                            ? (_isAhorroIncome ? 'Ahorro: Banco a Ahorro' : 'Ahorro: Ahorro a Banco')
+                        description: _isAhorroIncome
+                            ? 'Ahorro: Banco a Ahorro'
                             : (descriptionController.text.isEmpty ? null : descriptionController.text),
                         isRecurring: isRecurring,
                         recurringName: isRecurring
@@ -1029,9 +1035,24 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         await _db.updateExpense(newExpense);
                       }
 
-                      // Create paired income for Ahorro transfers
-                      // Only create paired income for Banco→Ahorro transfer, NOT for spending from Ahorro
-                      if (_isAhorroIncome && existing == null) {
+                      // Handle paired income for Ahorro transfers
+                      if (existing != null) {
+                        // Check if old expense was Ahorro-related (need to clean up old paired income)
+                        final wasAhorro = existing!.expense?.category == 'Ahorro';
+                        if (wasAhorro) {
+                          final allIncomes = await _db.getAllIncomes();
+                          for (final inc in allIncomes) {
+                            if (inc.isAhorroTransfer && inc.notes!.contains('Ahorro:') &&
+                                inc.date == existing!.date &&
+                                inc.totalAmount == existing!.amount) {
+                              await _db.deleteIncome(inc.id);
+                            }
+                          }
+                        }
+                      }
+
+                      // Create paired income only for Banco→Ahorro
+                      if (_isAhorroIncome) {
                         final ahorroIncome = DailyIncome(
                           id: const Uuid().v4(),
                           date: selectedDate,
