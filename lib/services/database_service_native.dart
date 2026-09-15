@@ -973,23 +973,28 @@ class DatabaseService implements DatabaseServiceInterface {
     var dist = await getDistribution(month, year);
     if (dist == null) return;
 
-    // Get expenses and incomes — use all by default
+    // Get expenses — use all by default
     List<Expense> expenses;
-    List<DailyIncome> incomes;
     if (from != null && to != null) {
       expenses = await getExpenseListByDateRange(from, to);
-      incomes = await getIncomeListByDateRange(from, to);
     } else {
       expenses = await getAllExpenses();
-      incomes = await getAllIncomes();
     }
 
     // Recalculate per-category spent
     final updatedCategories = dist.categories.map((cat) {
       if (cat.isAutomatic) {
-        // Ahorro: separate bucket, not part of distribution
-        // spentAmount = 0 (only used for manual adjustments)
-        return cat.copyWith(spentAmount: 0);
+        // Ahorro: Banco→Ahorro expenses count in distribution
+        // Gastar de Ahorro is excluded (handled by isAhorroTransfer skip in loop below)
+        double ahorroIn = 0;
+        for (final exp in expenses) {
+          if (exp.category != 'Ahorro') continue;
+          final isBankToAhorro = exp.description != null && exp.description!.startsWith('Ahorro:');
+          if (isBankToAhorro) {
+            ahorroIn += exp.amount;
+          }
+        }
+        return cat.copyWith(spentAmount: ahorroIn);
       }
       double spent = 0;
       for (final exp in expenses) {

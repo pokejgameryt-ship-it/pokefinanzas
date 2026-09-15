@@ -162,26 +162,26 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       // Calculate spent amounts from actual expenses (from period start)
       final allExpenses = await _db.getAllExpenses();
-      final allIncomes = await _db.getAllIncomes();
       final periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
 
-      // Ahorro: only track Bank→Ahorro transfers (money going INTO Ahorro)
-      // Spending from Ahorro does NOT affect distribution
-      // No periodStartDate filter — include ALL transfers from the month
+      // Ahorro: balance from expenses only (no paired income)
+      // Banco→Ahorro (description starts with 'Ahorro:') = money directed to Ahorro
+      // Gastar de Ahorro = money spent from Ahorro (excluded from distribution)
       double ahorroIn = 0;
-      for (final income in allIncomes) {
-        if (income.date.month != month || income.date.year != year) continue;
-        if (income.isAhorroTransfer && income.notes!.contains('Banco a Ahorro')) {
-          ahorroIn += income.totalAmount;
+      for (final expense in allExpenses) {
+        if (expense.date.month != month || expense.date.year != year) continue;
+        if (expense.category != 'Ahorro') continue;
+        final isBankToAhorro = expense.description != null && expense.description!.startsWith('Ahorro:');
+        if (isBankToAhorro) {
+          ahorroIn += expense.amount;
         }
       }
-      // spentAmount = 0 for Ahorro (it's a separate bucket, not a distribution category)
-      // ahorroIn tracked separately for display purposes
+      // spentAmount = money directed TO Ahorro (for Ahorro category display)
 
       final updatedCategories = dist.categories.map((cat) {
         if (cat.isAutomatic) {
           final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
-          return cat.copyWith(spentAmount: adjustment);
+          return cat.copyWith(spentAmount: ahorroIn + adjustment);
         }
         double spent = 0;
         for (final expense in allExpenses) {

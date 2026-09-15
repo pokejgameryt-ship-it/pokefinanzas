@@ -1035,34 +1035,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                         await _db.updateExpense(newExpense);
                       }
 
-                      // Handle paired income for Ahorro transfers
-                      if (existing != null) {
-                        // Check if old expense was Ahorro-related (need to clean up old paired income)
-                        final wasAhorro = existing!.expense?.category == 'Ahorro';
-                        if (wasAhorro) {
-                          final allIncomes = await _db.getAllIncomes();
-                          for (final inc in allIncomes) {
-                            if (inc.isAhorroTransfer && inc.notes!.contains('Ahorro:') &&
-                                inc.date == existing!.date &&
-                                inc.totalAmount == existing!.amount) {
-                              await _db.deleteIncome(inc.id);
-                            }
-                          }
-                        }
-                      }
-
-                      // Create paired income only for Banco→Ahorro
-                      if (_isAhorroIncome) {
-                        final ahorroIncome = DailyIncome(
-                          id: const Uuid().v4(),
-                          date: selectedDate,
-                          totalAmount: amount,
-                          notes: 'Ahorro: Banco a Ahorro',
-                          type: 'ahorro',
-                          isCash: false,
-                        );
-                        await _db.insertIncome(ahorroIncome);
-                      }
+                      // NO paired income for Ahorro - balance is calculated from expenses only
 
                       // Check budget alerts for this category (skip transfers)
                       if (selectedCategory.isNotEmpty && selectedCategory != 'Transferencia') {

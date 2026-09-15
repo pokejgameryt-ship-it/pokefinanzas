@@ -77,25 +77,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
         _db.getTotalBankExpense(),
       ]);
 
-      // Ahorro: balance = transfers IN (Bank→Ahorro) - spending OUT
+      // Ahorro: balance from expenses only (no paired income)
+      // Banco→Ahorro (description starts with 'Ahorro:') = ADD to balance
+      // Gastar de Ahorro = SUBTRACT from balance
       double totalAhorroSpent = 0;
       double monthAhorroSpent = 0;
-      // Ahorro transfers IN (Bank→Ahorro) ADD to balance
-      for (final i in await _db.getAllIncomes()) {
-        if (i.isAhorroTransfer && i.notes!.contains('Banco a Ahorro')) {
-          totalAhorroSpent += i.totalAmount;
-          if (i.date.month == now.month && i.date.year == now.year) {
-            monthAhorroSpent += i.totalAmount;
-          }
-        }
-      }
-      // Ahorro expenses SUBTRACT from balance
       for (final e in await _db.getAllExpenses()) {
-        if (e.category == 'Ahorro') {
-          totalAhorroSpent -= e.amount;
-          if (e.date.month == now.month && e.date.year == now.year) {
-            monthAhorroSpent -= e.amount;
-          }
+        if (e.category != 'Ahorro') continue;
+        final isBankToAhorro = e.description != null && e.description!.startsWith('Ahorro:');
+        final sign = isBankToAhorro ? 1.0 : -1.0;
+        totalAhorroSpent += e.amount * sign;
+        if (e.date.month == now.month && e.date.year == now.year) {
+          monthAhorroSpent += e.amount * sign;
         }
       }
 
