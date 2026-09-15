@@ -244,6 +244,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
     String selectedTransferTo = '';
     bool isSaving = false;
     bool _isAhorroIncome = false;
+    bool _isAhorroExpense = false;
     bool isCajeroCashToBank = true;
     List<String> selectedTags = List.from(existing?.expense?.tags ?? []);
 
@@ -822,26 +823,30 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       ButtonSegment(value: 'ahorro', label: Text('Ahorro'), icon: Icon(Icons.savings, size: 18)),
                     ],
                     selected: {
-                      isCash ? 'efectivo' : (selectedCategory == 'Ahorro' ? 'ahorro' : 'banco')
+                      isCash ? 'efectivo' : (_isAhorroExpense ? 'ahorro' : 'banco')
                     },
                     onSelectionChanged: (selection) {
                       final value = selection.first;
                       setModalState(() {
                         if (value == 'efectivo') {
                           isCash = true;
-                          if (selectedCategory == 'Ahorro') selectedCategory = '';
+                          if (_isAhorroExpense) { selectedCategory = ''; _isAhorroExpense = false; }
+                          _isAhorroIncome = false;
                         } else if (value == 'ahorro') {
                           isCash = false;
-                          selectedCategory = 'Ahorro';
+                          _isAhorroIncome = false;
+                          _isAhorroExpense = true;
                           selectedTransferTo = 'Ahorro';
                         } else {
                           isCash = false;
-                          if (selectedCategory == 'Ahorro') selectedCategory = '';
+                          if (_isAhorroExpense) { selectedCategory = ''; _isAhorroExpense = false; }
+                          _isAhorroIncome = false;
+                          _isAhorroExpense = false;
                         }
                       });
                     },
                   ),
-                  if (selectedCategory == 'Ahorro') ...[
+                  if (_isAhorroExpense) ...[
                     const SizedBox(height: 8),
                     SegmentedButton<String>(
                       segments: const [
@@ -999,10 +1004,10 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       final newExpense = Expense(
                         id: existing?.id ?? const Uuid().v4(),
                         amount: amount,
-                        category: selectedCategory,
+                        category: _isAhorroExpense ? 'Ahorro' : selectedCategory,
                         subcategory: selectedSubcategory,
                         date: selectedDate,
-                        description: selectedCategory == 'Ahorro'
+                        description: _isAhorroExpense
                             ? (_isAhorroIncome ? 'Ahorro: Banco a Ahorro' : 'Ahorro: Ahorro a Banco')
                             : (descriptionController.text.isEmpty ? null : descriptionController.text),
                         isRecurring: isRecurring,
@@ -1013,7 +1018,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                             : null,
                         transferTo: (selectedCategory == 'Transferencia' && selectedTransferTo.isNotEmpty)
                             ? selectedTransferTo
-                            : (selectedCategory == 'Ahorro' ? 'Ahorro' : null),
+                            : (_isAhorroExpense ? 'Ahorro' : null),
                         isCash: isCash,
                         tags: selectedTags,
                       );
@@ -1025,7 +1030,7 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
                       }
 
                       // Create paired income for Ahorro transfers
-                      if (selectedCategory == 'Ahorro' && existing == null) {
+                      if (_isAhorroExpense && existing == null) {
                         final ahorroIncome = DailyIncome(
                           id: const Uuid().v4(),
                           date: selectedDate,
