@@ -174,6 +174,7 @@ class SavingsDistribution {
     for (final cat in enabledUserCategories) {
       total += cat.spentAmount;
     }
+    total += savingsCategory.spentAmount;
     return total;
   }
 
