@@ -987,22 +987,22 @@ class DatabaseService implements DatabaseServiceInterface {
     // Recalculate per-category spent
     final updatedCategories = dist.categories.map((cat) {
       if (cat.isAutomatic) {
-        double transfers = 0;
-        // Ahorro transfers IN (Bank→Ahorro) reduce spent
+        // Ahorro: net balance = money OUT - money IN
+        double ahorroIn = 0;
+        double ahorroOut = 0;
         for (final inc in incomes) {
           if (inc.isAhorroTransfer && inc.notes!.contains('Banco a Ahorro')) {
-            transfers -= inc.totalAmount;
+            ahorroIn += inc.totalAmount;
           }
         }
-        // Ahorro expenses (Ahorro→Bank + regular) increase spent
         for (final exp in expenses) {
           if (exp.isTransfer && exp.transferTo == 'Ahorro') {
-            transfers += exp.amount;
+            ahorroOut += exp.amount;
           } else if (exp.category == 'Ahorro') {
-            transfers += exp.amount;
+            ahorroOut += exp.amount;
           }
         }
-        return cat.copyWith(spentAmount: transfers);
+        return cat.copyWith(spentAmount: ahorroOut - ahorroIn);
       }
       double spent = 0;
       for (final exp in expenses) {
