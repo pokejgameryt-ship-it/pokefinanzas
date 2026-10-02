@@ -169,13 +169,14 @@ class SavingsDistribution {
     return fixed + (remaining * totalPercentage / 100);
   }
 
-  /// Total budget including redistributed amounts from previous period.
+  /// Total budget for the period: actual income + redistributed amounts.
+  /// Used for the top budget bar (spent vs available).
   double get totalAvailableBudget {
     double redistributed = 0;
     for (final cat in categories) {
       redistributed += cat.totalRedistributionReceived;
     }
-    return totalBudget + redistributed;
+    return monthlyIncome + redistributed;
   }
 
   double get totalSpent {
