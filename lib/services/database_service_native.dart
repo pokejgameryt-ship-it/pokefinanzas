@@ -1138,8 +1138,8 @@ class DatabaseService implements DatabaseServiceInterface {
         year: currentYear,
         monthlyIncome: newIncome,
         categories: newCategories,
-        // Before redistribution, period starts on redistribution day (future) → spent = 0
-        periodStartDate: DateTime(currentYear, currentMonth, _globalRedistributionDay).add(const Duration(days: 1)),
+        // Count from day 1 until redistribution runs, then resets to redistribution day
+        periodStartDate: DateTime(currentYear, currentMonth, 1),
       );
       await insertDistribution(currentDist);
     }
