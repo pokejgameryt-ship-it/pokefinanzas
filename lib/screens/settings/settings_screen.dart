@@ -226,7 +226,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'El día del mes en que se redistribuye el sobrante de cada categoría.',
+                'El día del mes en que termina un periodo y empieza el siguiente.',
                 style: TextStyle(fontSize: 13),
               ),
               const SizedBox(height: 8),
@@ -237,7 +237,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Text(
-                  'Al cambiar, se recalcularán los presupuestos basados en los ingresos de los últimos 30 días.',
+                  'Ej: si es día 10, el periodo va del 10 de un mes al 9 del siguiente. El presupuesto se basa en los ingresos reales del periodo anterior.',
                   style: TextStyle(fontSize: 11),
                 ),
               ),
@@ -455,7 +455,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.calendar_today, color: Colors.orange),
             title: const Text('Día de redistribución'),
-            subtitle: const Text('Día del mes en que se redistribuye el sobrante'),
+            subtitle: const Text('Día del mes en que empieza un nuevo periodo'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _showRedistributionDayDialog,
           ),

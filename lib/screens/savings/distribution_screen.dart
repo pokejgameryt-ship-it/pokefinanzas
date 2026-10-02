@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import '../../models/expense.dart';
 import '../../models/savings_distribution.dart';
 import '../../models/redistribution_config.dart';
 import '../../models/redistribution_preset.dart';
@@ -32,6 +31,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
   double _transfersToSavings = 0;
   Map<String, double> _redistributionReceivedMap = {};
   Map<String, double> _manualAdjustments = {};
+  bool _isFirstLoad = true;
 
   @override
   void initState() {
@@ -101,14 +101,29 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
   Future<void> _loadData() async {
     try {
-      final month = _selectedMonth.month;
-      final year = _selectedMonth.year;
-
       // Load redistribution settings
       _globalRedistributionDay = await _db.getGlobalRedistributionDay();
       _redistributionEnabled = await _db.getRedistributionEnabled();
       _redistributionConfigs = await _db.getRedistributionConfigs();
       _redistributionPresets = await _db.getRedistributionPresets();
+
+      // On first load: before redistribution day, default to previous month (active period)
+      if (_isFirstLoad) {
+        _isFirstLoad = false;
+        final now = DateTime.now();
+        if (_selectedMonth.year == now.year &&
+            _selectedMonth.month == now.month &&
+            now.day < _globalRedistributionDay) {
+          _selectedMonth = DateTime(
+            now.month == 1 ? now.year - 1 : now.year,
+            now.month == 1 ? 12 : now.month - 1,
+          );
+        }
+      }
+
+      final month = _selectedMonth.month;
+      final year = _selectedMonth.year;
+      final x = _globalRedistributionDay;
 
       SavingsDistribution? dist;
       try {
@@ -118,16 +133,14 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       }
 
       // Only create distribution if it doesn't exist yet
-      // First time: budget = total money (all income - all expenses, excluding Ahorro)
       if (dist == null) {
         final totalIncome = await _db.getTotalIncomeAll();
         final allExpenses = await _db.getAllExpenses();
-        // Exclude Ahorro expenses (transfers to savings are not part of budget)
         double totalExpenses = 0;
         for (final e in allExpenses) {
           if (e.isTransfer) continue;
           if (e.category == 'Cajero') continue;
-          if (e.category == 'Ahorro') continue;
+          if (e.isAhorroTransfer) continue;
           totalExpenses += e.amount;
         }
         final currentBalance = totalIncome - totalExpenses;
@@ -144,6 +157,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
               isAutomatic: true,
             ),
           ],
+          periodStartDate: DateTime(year, month, x),
         );
         await _db.insertDistribution(dist);
       }
@@ -160,36 +174,34 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         await _db.insertDistribution(dist);
       }
 
-      // Calculate spent amounts from actual expenses (from period start)
+      // Calculate spent amounts from actual expenses within the period
       final allExpenses = await _db.getAllExpenses();
-      var periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
-      // If periodStartDate is in the future (redistribution hasn't run yet), count from day 1
-      if (periodStart.isAfter(DateTime.now())) {
-        periodStart = DateTime(year, month, 1);
-      }
+      final periodStart = dist.periodStartDate ?? DateTime(year, month, x);
+      final periodEnd =
+          DateTime(periodStart.year, periodStart.month + 1, periodStart.day - 1);
 
-      // Ahorro: balance from expenses only (no paired income)
-      // Banco→Ahorro (description starts with 'Ahorro:') = money directed to Ahorro
-      // Gastar de Ahorro = money spent from Ahorro (excluded from distribution)
+      // Ahorro: Banco→Ahorro within period (money directed TO Ahorro)
       double ahorroIn = 0;
       for (final expense in allExpenses) {
-        if (expense.date.month != month || expense.date.year != year) continue;
+        if (expense.date.isBefore(periodStart)) continue;
+        if (expense.date.isAfter(periodEnd)) continue;
         if (expense.category != 'Ahorro') continue;
-        final isBankToAhorro = expense.description != null && expense.description!.startsWith('Ahorro:');
+        final isBankToAhorro =
+            expense.description != null && expense.description!.startsWith('Ahorro:');
         if (isBankToAhorro) {
           ahorroIn += expense.amount;
         }
       }
-      // spentAmount = money directed TO Ahorro (for Ahorro category display)
 
       final updatedCategories = dist.categories.map((cat) {
         if (cat.isAutomatic) {
-          final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
+          final adjustment = _manualAdjustments['${cat.name}_${month}_$year'] ?? 0;
           return cat.copyWith(spentAmount: ahorroIn + adjustment);
         }
         double spent = 0;
         for (final expense in allExpenses) {
           if (expense.date.isBefore(periodStart)) continue;
+          if (expense.date.isAfter(periodEnd)) continue;
           if (expense.isTransfer) continue;
           if (expense.category == 'Cajero') continue;
           if (expense.isAhorroTransfer) continue;
@@ -198,23 +210,15 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
             spent += expense.amount;
           }
         }
-        // Apply manual adjustment
-        final adjustment = _manualAdjustments['${cat.name}_$month\_$year'] ?? 0;
+        final adjustment = _manualAdjustments['${cat.name}_${month}_$year'] ?? 0;
         spent += adjustment;
         return cat.copyWith(spentAmount: spent);
       }).toList();
 
-      final updatedDist = dist.copyWith(
-        categories: updatedCategories,
-        // Fix periodStartDate if it's in the future (redistribution hasn't run yet)
-        periodStartDate: dist.periodStartDate != null && dist.periodStartDate!.isAfter(DateTime.now())
-            ? DateTime(year, month, 1)
-            : dist.periodStartDate,
-      );
-      // Only save if spent amounts changed
+      final updatedDist = dist.copyWith(categories: updatedCategories);
       await _db.insertDistribution(updatedDist);
 
-      // Calculate redistribution received from previous month
+      // Calculate redistribution received from previous period
       double prevRedistribution = 0;
       final Map<String, double> redistributionReceived = {};
       try {
@@ -1398,7 +1402,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                           ),
                           const SizedBox(height: 4),
                           Text(
-                            'Ingresos del mes anterior',
+                            'Ingresos del periodo anterior',
                             style: TextStyle(
                               fontSize: 12,
                               color: colorScheme.onSurfaceVariant.withValues(alpha: 0.5),
@@ -1406,7 +1410,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                           ),
                           const SizedBox(height: 16),
                           // Budget progress bar
-                          if (dist.monthlyIncome > 0) ...[
+                          if (dist.totalAvailableBudget > 0) ...[
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -1418,11 +1422,11 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                                   ),
                                 ),
                                 Text(
-                                  '${Formatters.formatCurrency(dist.totalSpent)} / ${Formatters.formatCurrency(dist.monthlyIncome)}',
+                                  '${Formatters.formatCurrency(dist.totalSpent)} / ${Formatters.formatCurrency(dist.totalAvailableBudget)}',
                                   style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: dist.totalSpent > dist.monthlyIncome
+                                    color: dist.totalSpent > dist.totalAvailableBudget
                                         ? colorScheme.error
                                         : colorScheme.onSurface,
                                   ),
@@ -1433,13 +1437,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                             ClipRRect(
                               borderRadius: BorderRadius.circular(6),
                               child: LinearProgressIndicator(
-                                value: dist.monthlyIncome > 0
-                                    ? (dist.totalSpent / dist.monthlyIncome).clamp(0.0, 1.0)
+                                value: dist.totalAvailableBudget > 0
+                                    ? (dist.totalSpent / dist.totalAvailableBudget).clamp(0.0, 1.0)
                                     : 0,
                                 minHeight: 10,
                                 backgroundColor: colorScheme.surfaceContainerHighest,
                                 valueColor: AlwaysStoppedAnimation(
-                                  dist.totalSpent > dist.monthlyIncome
+                                  dist.totalSpent > dist.totalAvailableBudget
                                       ? colorScheme.error
                                       : const Color(0xFF4CAF50),
                                 ),
@@ -1450,17 +1454,17 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  '${dist.monthlyIncome > 0 ? ((dist.totalSpent / dist.monthlyIncome) * 100).clamp(0, 100).toStringAsFixed(0) : 0}% gastado',
+                                  '${dist.totalAvailableBudget > 0 ? ((dist.totalSpent / dist.totalAvailableBudget) * 100).clamp(0, 100).toStringAsFixed(0) : 0}% gastado',
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.bold,
-                                    color: dist.totalSpent > dist.monthlyIncome
+                                    color: dist.totalSpent > dist.totalAvailableBudget
                                         ? colorScheme.error
                                         : const Color(0xFF4CAF50),
                                   ),
                                 ),
                                 Text(
-                                  'Restante: ${Formatters.formatCurrency((dist.monthlyIncome - dist.totalSpent).clamp(0, double.infinity))}',
+                                  'Restante: ${Formatters.formatCurrency((dist.totalAvailableBudget - dist.totalSpent).clamp(0, double.infinity))}',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: colorScheme.onSurfaceVariant,
@@ -1641,7 +1645,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   ),
 
                   // Weekly budget summary (when in weekly view)
-                  if (_isWeeklyView && dist.monthlyIncome > 0) ...[
+                  if (_isWeeklyView && dist.totalAvailableBudget > 0) ...[
                     const SizedBox(height: 12),
                     Card(
                       color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.3),
@@ -1666,7 +1670,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                             const SizedBox(height: 12),
                             _WeeklyBudgetRow(
                               label: 'Presupuesto semanal',
-                              amount: dist.monthlyIncome / 4.3,
+                              amount: dist.totalAvailableBudget / 4.3,
                               icon: Icons.account_balance,
                             ),
                             const SizedBox(height: 8),
@@ -1688,7 +1692,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                   ],
 
                   // Resumen
-                  if (dist.monthlyIncome > 0) ...[
+                  if (dist.totalAvailableBudget > 0) ...[
                     const SizedBox(height: 12),
                     Row(
                       children: [
@@ -1715,8 +1719,8 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                         Expanded(
                           child: _SummaryCard(
                             title: 'Restante',
-                            amount: dist.monthlyIncome - dist.totalSpent,
-                            color: (dist.monthlyIncome - dist.totalSpent) >= 0
+                            amount: dist.totalAvailableBudget - dist.totalSpent,
+                            color: (dist.totalAvailableBudget - dist.totalSpent) >= 0
                                 ? const Color(0xFF4CAF50)
                                 : colorScheme.error,
                             icon: Icons.account_balance_wallet,
@@ -1808,7 +1812,7 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
                       final budgetAmount = dist.getCategoryBudget(cat);
                       final percentage = cat.isAutomatic
                           ? (savingsBudget > 0
-                              ? ((dist.monthlyIncome - dist.totalSpent) /
+                              ? ((dist.totalAvailableBudget - dist.totalSpent) /
                                       savingsBudget * 100)
                                   .clamp(0.0, 100.0)
                               : 0.0)

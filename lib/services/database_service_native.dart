@@ -1018,112 +1018,90 @@ class DatabaseService implements DatabaseServiceInterface {
     final today = now.day;
     final currentMonth = now.month;
     final currentYear = now.year;
+    final x = _globalRedistributionDay;
+
+    // Period only starts on redistribution day. Before that, previous period is active.
+    if (today < x) return;
 
     final prevMonth = currentMonth == 1 ? 12 : currentMonth - 1;
     final prevYear = currentMonth == 1 ? currentYear - 1 : currentYear;
 
+    // Calculate actual income from previous period: [day x prevMonth, day x-1 currentMonth]
+    final prevPeriodStart = DateTime(prevYear, prevMonth, x);
+    final prevPeriodEnd = DateTime(currentYear, currentMonth, x - 1);
+    final prevPeriodIncome = await getIncomesByDateRange(prevPeriodStart, prevPeriodEnd);
+
     final prevDist = await getDistribution(prevMonth, prevYear);
 
-    // Calculate redistribution from previous month FIRST
-    double totalRedistributed = 0;
-    double unallocatedCarryOver = 0; // Money not redistributed (percentages < 100%)
+    // Calculate redistribution from previous period
     final Map<String, double> redistributionByTarget = {};
     final List<int> appliedPrevIndices = [];
     final List<DistributionCategory> prevCategories = prevDist != null
         ? List<DistributionCategory>.from(prevDist.categories)
         : [];
 
-    if (_redistributionEnabled && prevDist != null) {
-      final actualPrevIncome = prevDist.monthlyIncome;
-      if (actualPrevIncome > 0) {
-        bool alreadyApplied = prevDist.categories
-            .where((c) => !c.isAutomatic)
-            .every((c) => c.redistributionApplied);
+    if (prevDist != null) {
+      // Idempotency: skip if already redistributed
+      bool alreadyApplied = prevDist.categories
+          .where((c) => !c.isAutomatic)
+          .every((c) => c.redistributionApplied);
 
-        if (!alreadyApplied) {
-          double totalFixedExpenses = 0;
-          for (final cat in prevDist.userCategories) {
-            if (cat.isFixed) {
-              totalFixedExpenses += cat.fixedAmount ?? 0;
+      if (!alreadyApplied) {
+        for (int pi = 0; pi < prevCategories.length; pi++) {
+          final prevCat = prevCategories[pi];
+          if (prevCat.redistributionApplied) continue;
+          if (!prevCat.isEnabled && !prevCat.isAutomatic) continue;
+
+          final unspent = prevDist.getCategoryUnspentBase(prevCat);
+          if (unspent <= 0) continue;
+
+          // Determine redistribution behavior
+          final config = _redistributionConfigs[prevCat.name];
+
+          if (_redistributionEnabled &&
+              config != null &&
+              config.redistributionPercentages.isNotEmpty) {
+            // Custom redistribution config: split per percentages
+            for (final entry in config.redistributionPercentages.entries) {
+              final amount = unspent * entry.value / 100;
+              redistributionByTarget[entry.key] =
+                  (redistributionByTarget[entry.key] ?? 0) + amount;
             }
+          } else if (_redistributionEnabled &&
+              prevCat.redistributionPercentages.isNotEmpty &&
+              prevCat.redistributionPercentages.length > 1) {
+            // Category-level percentages (multiple targets): split
+            for (final entry in prevCat.redistributionPercentages.entries) {
+              final amount = unspent * entry.value / 100;
+              redistributionByTarget[entry.key] =
+                  (redistributionByTarget[entry.key] ?? 0) + amount;
+            }
+          } else {
+            // Default: 100% carry-over to same category (redistribution off or no config)
+            redistributionByTarget[prevCat.name] =
+                (redistributionByTarget[prevCat.name] ?? 0) + unspent;
           }
 
-          if (totalFixedExpenses < actualPrevIncome) {
-            final totalActualSpent = prevDist.totalSpent;
-            if (totalActualSpent < actualPrevIncome) {
-              final netSavings = actualPrevIncome - totalActualSpent;
-
-              for (int pi = 0; pi < prevCategories.length; pi++) {
-                final prevCat = prevCategories[pi];
-                if (prevCat.redistributionApplied) continue;
-
-                final config = _redistributionConfigs[prevCat.name];
-                final catDay = config?.redistributionDay ?? _globalRedistributionDay;
-
-                if (today < catDay) continue;
-
-                if (!prevCat.isEnabled && !prevCat.isAutomatic) continue;
-
-                final unspent = prevDist.getCategoryUnspentBase(prevCat);
-                if (unspent <= 0) continue;
-
-                final percentages = config?.redistributionPercentages.isNotEmpty == true
-                    ? config!.redistributionPercentages
-                    : (prevCat.redistributionPercentages.isNotEmpty
-                        ? prevCat.redistributionPercentages
-                        : {prevCat.name: 100.0});
-
-                // Sum of configured percentages
-                final totalPercent = percentages.values.fold(0.0, (a, b) => a + b);
-
-                for (final entry in percentages.entries) {
-                  final amount = unspent * entry.value / 100;
-                  redistributionByTarget[entry.key] =
-                      (redistributionByTarget[entry.key] ?? 0) + amount;
-                  totalRedistributed += amount;
-                }
-
-                // Track unallocated money (percentages < 100%)
-                if (totalPercent < 100) {
-                  unallocatedCarryOver += unspent * (100 - totalPercent) / 100;
-                }
-
-                appliedPrevIndices.add(pi);
-              }
-
-              if (totalRedistributed > netSavings && netSavings > 0) {
-                final factor = netSavings / totalRedistributed;
-                for (final key in redistributionByTarget.keys) {
-                  redistributionByTarget[key] = redistributionByTarget[key]! * factor;
-                }
-                totalRedistributed = netSavings;
-                unallocatedCarryOver = 0; // Capped at net savings
-              }
-            }
-          }
+          appliedPrevIndices.add(pi);
         }
       }
     }
 
-    // Now create or load current month distribution
+    // Create or update current period distribution
     var currentDist = await getDistribution(currentMonth, currentYear);
     if (currentDist == null) {
-      // New month: income = prev month's income + redistribution + unallocated carry over
-      final prevIncome = prevDist?.monthlyIncome ?? 0.0;
-      final newIncome = prevIncome + totalRedistributed + unallocatedCarryOver;
-
       List<DistributionCategory> newCategories;
       if (prevDist != null) {
         newCategories = prevDist.userCategories.map((cat) => DistributionCategory(
-          name: cat.name,
-          fixedAmount: cat.fixedAmount,
-          percentage: cat.percentage,
-          isFixed: cat.isFixed,
-          spentAmount: 0,
-          isAutomatic: false,
-          isEnabled: cat.isEnabled,
-          redistributionPercentages: cat.redistributionPercentages,
-        )).toList();
+              name: cat.name,
+              fixedAmount: cat.fixedAmount,
+              percentage: cat.percentage,
+              isFixed: cat.isFixed,
+              spentAmount: 0,
+              isAutomatic: false,
+              isEnabled: cat.isEnabled,
+              redistributionPercentages: cat.redistributionPercentages,
+            )).toList();
       } else {
         newCategories = [];
       }
@@ -1132,48 +1110,51 @@ class DatabaseService implements DatabaseServiceInterface {
         isFixed: true,
         isAutomatic: true,
       ));
+
       currentDist = SavingsDistribution(
         id: '$currentYear-$currentMonth',
         month: currentMonth,
         year: currentYear,
-        monthlyIncome: newIncome,
+        monthlyIncome: prevPeriodIncome,
         categories: newCategories,
-        // Count from day 1 until redistribution runs, then resets to redistribution day
-        periodStartDate: DateTime(currentYear, currentMonth, 1),
+        periodStartDate: DateTime(currentYear, currentMonth, x),
+      );
+      await insertDistribution(currentDist);
+    } else if (currentDist.periodStartDate == null ||
+        currentDist.periodStartDate!.year != currentYear ||
+        currentDist.periodStartDate!.month != currentMonth ||
+        currentDist.periodStartDate!.day != x) {
+      // Fix periodStartDate if wrong (e.g. created by old code with day 1)
+      currentDist = currentDist.copyWith(
+        periodStartDate: DateTime(currentYear, currentMonth, x),
       );
       await insertDistribution(currentDist);
     }
 
-    if (!_redistributionEnabled || prevDist == null) return;
-    if (totalRedistributed <= 0 && unallocatedCarryOver <= 0) return;
+    // Apply redistribution to current period categories
+    if (prevDist != null && appliedPrevIndices.isNotEmpty) {
+      final currentCategories = List<DistributionCategory>.from(currentDist.categories);
 
-    // Apply redistribution to current month categories
-    final currentCategories = List<DistributionCategory>.from(currentDist.categories);
-
-    for (final entry in redistributionByTarget.entries) {
-      final idx = currentCategories.indexWhere((c) => c.name == entry.key);
-      if (idx >= 0) {
-        final old = currentCategories[idx];
-        currentCategories[idx] = old.copyWith(
-          totalRedistributionReceived: old.totalRedistributionReceived + entry.value,
-        );
+      for (final entry in redistributionByTarget.entries) {
+        final idx = currentCategories.indexWhere((c) => c.name == entry.key);
+        if (idx >= 0) {
+          final old = currentCategories[idx];
+          currentCategories[idx] = old.copyWith(
+            totalRedistributionReceived: old.totalRedistributionReceived + entry.value,
+          );
+        }
       }
+
+      for (final pi in appliedPrevIndices) {
+        prevCategories[pi] = prevCategories[pi].copyWith(redistributionApplied: true);
+      }
+
+      final updatedPrevDist = prevDist.copyWith(categories: prevCategories);
+      final updatedCurrentDist = currentDist.copyWith(categories: currentCategories);
+
+      await insertDistribution(updatedCurrentDist);
+      await updateDistribution(updatedPrevDist);
     }
-
-    for (final pi in appliedPrevIndices) {
-      prevCategories[pi] = prevCategories[pi].copyWith(redistributionApplied: true);
-    }
-
-    final updatedPrevDist = prevDist.copyWith(categories: prevCategories);
-    final updatedCurrentDist = currentDist.copyWith(
-      categories: currentCategories,
-      // Add redistributed + unallocated carry over to income
-      monthlyIncome: currentDist.monthlyIncome + totalRedistributed + unallocatedCarryOver,
-      periodStartDate: DateTime.now(),
-    );
-
-    await insertDistribution(updatedCurrentDist);
-    await updateDistribution(updatedPrevDist);
   }
 
   @override

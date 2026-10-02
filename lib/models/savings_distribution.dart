@@ -169,6 +169,15 @@ class SavingsDistribution {
     return fixed + (remaining * totalPercentage / 100);
   }
 
+  /// Total budget including redistributed amounts from previous period.
+  double get totalAvailableBudget {
+    double redistributed = 0;
+    for (final cat in categories) {
+      redistributed += cat.totalRedistributionReceived;
+    }
+    return totalBudget + redistributed;
+  }
+
   double get totalSpent {
     double total = 0;
     for (final cat in enabledUserCategories) {
@@ -181,9 +190,7 @@ class SavingsDistribution {
   double get totalOverBudget {
     double total = 0;
     for (final cat in enabledUserCategories) {
-      final budget = cat.isFixed
-          ? (cat.fixedAmount ?? 0)
-          : (monthlyIncome - totalFixed) * (cat.percentage ?? 0) / 100;
+      final budget = getCategoryBudget(cat);
       if (cat.spentAmount > budget) {
         total += cat.spentAmount - budget;
       }
@@ -205,31 +212,27 @@ class SavingsDistribution {
   }
 
   double get savings {
-    final unspent = monthlyIncome - totalSpent;
+    final unspent = totalAvailableBudget - totalSpent;
     return unspent > 0 ? unspent : 0;
   }
 
   double get remaining {
-    return monthlyIncome - totalBudget;
+    return totalAvailableBudget - totalBudget;
   }
 
-  bool get isOverBudget => totalSpent > monthlyIncome;
+  bool get isOverBudget => totalSpent > totalAvailableBudget;
 
   double getOverBudgetAmount(String categoryName) {
     final cat = categories.firstWhere(
       (c) => c.name == categoryName,
       orElse: () => DistributionCategory(name: categoryName),
     );
-    final fixed = totalFixed;
-    final remaining = monthlyIncome - fixed;
-    final budget = cat.isFixed
-        ? (cat.fixedAmount ?? 0)
-        : remaining > 0 ? remaining * (cat.percentage ?? 0) / 100 : 0;
+    final budget = getCategoryBudget(cat);
     return cat.spentAmount > budget ? cat.spentAmount - budget : 0;
   }
 
   double getCategoryBudget(DistributionCategory cat) {
-    if (cat.isAutomatic) return savingsBudget;
+    if (cat.isAutomatic) return savingsBudget + cat.totalRedistributionReceived;
     if (!cat.isEnabled) return 0;
     final fixed = totalFixed;
     final remaining = monthlyIncome - fixed;
