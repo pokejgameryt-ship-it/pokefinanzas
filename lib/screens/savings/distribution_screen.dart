@@ -162,7 +162,11 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
 
       // Calculate spent amounts from actual expenses (from period start)
       final allExpenses = await _db.getAllExpenses();
-      final periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
+      var periodStart = dist.periodStartDate ?? DateTime(year, month, 1);
+      // If periodStartDate is in the future (redistribution hasn't run yet), count from day 1
+      if (periodStart.isAfter(DateTime.now())) {
+        periodStart = DateTime(year, month, 1);
+      }
 
       // Ahorro: balance from expenses only (no paired income)
       // Banco→Ahorro (description starts with 'Ahorro:') = money directed to Ahorro
@@ -200,7 +204,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         return cat.copyWith(spentAmount: spent);
       }).toList();
 
-      final updatedDist = dist.copyWith(categories: updatedCategories);
+      final updatedDist = dist.copyWith(
+        categories: updatedCategories,
+        // Fix periodStartDate if it's in the future (redistribution hasn't run yet)
+        periodStartDate: dist.periodStartDate != null && dist.periodStartDate!.isAfter(DateTime.now())
+            ? DateTime(year, month, 1)
+            : dist.periodStartDate,
+      );
       // Only save if spent amounts changed
       await _db.insertDistribution(updatedDist);
 
