@@ -1123,10 +1123,13 @@ class DatabaseService implements DatabaseServiceInterface {
     } else if (currentDist.periodStartDate == null ||
         currentDist.periodStartDate!.year != currentYear ||
         currentDist.periodStartDate!.month != currentMonth ||
-        currentDist.periodStartDate!.day != x) {
-      // Fix periodStartDate if wrong (e.g. created by old code with day 1)
+        currentDist.periodStartDate!.day != x ||
+        currentDist.monthlyIncome != prevPeriodIncome) {
+      // Fix periodStartDate AND monthlyIncome if wrong (e.g. created by old code with day 1,
+      // or income was set to currentBalance instead of actual period income)
       currentDist = currentDist.copyWith(
         periodStartDate: DateTime(currentYear, currentMonth, x),
+        monthlyIncome: prevPeriodIncome,
       );
       await insertDistribution(currentDist);
     }
