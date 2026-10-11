@@ -1178,10 +1178,8 @@ class DatabaseService implements DatabaseServiceInterface {
   @override
   Future<void> manualRecalculate() async {
     final now = DateTime.now();
-    final today = now.day;
     final currentMonth = now.month;
     final currentYear = now.year;
-    final x = _globalRedistributionDay;
 
     // Find the last period that had redistribution applied
     // Start from current month and go backwards
@@ -1237,19 +1235,27 @@ class DatabaseService implements DatabaseServiceInterface {
       return;
     }
 
-    // Calculate income from end of last redistributed period to now
-    // Last period ended at day x-1 of next month
-    final lastPeriodEnd = DateTime(
-      lastRedistributedYear,
-      lastRedistributedMonth + 1,
-      x - 1,
-    );
+    // Last period ended at its periodStartDate + 1 month - 1 day (day x-1)
+    // But if that's in the future, use the actual periodStartDate of next period if exists,
+    // otherwise use now
+    DateTime lastPeriodEnd;
+    final nextPeriodStart = DateTime(lastRedistributedYear, lastRedistributedMonth + 1, 1);
+    final nextDist = await getDistribution(nextPeriodStart.month, nextPeriodStart.year);
+    if (nextDist != null && nextDist.periodStartDate != null) {
+      // Next period exists, so last period ended at next period's start - 1 day
+      lastPeriodEnd = nextDist.periodStartDate!.subtract(const Duration(days: 1));
+    } else {
+      // No next period: last period ended at day x-1 of next month (the theoretical end)
+      // But if that's after now, clamp to now
+      final theoreticalEnd = DateTime(lastRedistributedYear, lastRedistributedMonth + 1, _globalRedistributionDay - 1);
+      lastPeriodEnd = theoreticalEnd.isAfter(now) ? now : theoreticalEnd;
+    }
 
-    // If last period end is in the future (shouldn't happen), clamp to now
-    final incomeStart = lastPeriodEnd.isAfter(now) ? now : lastPeriodEnd;
-    final periodIncome = await getIncomesByDateRange(incomeStart, now);
+    // Income from end of last redistributed period to NOW (the manual cut point)
+    final periodIncome = await getIncomesByDateRange(lastPeriodEnd, now);
 
-    // Get current period distribution or create it
+    // Create NEW period starting NOW (not day x)
+    // The key is now based on current year/month but periodStartDate = now
     var currentDist = await getDistribution(currentMonth, currentYear);
     if (currentDist == null) {
       List<DistributionCategory> newCategories;
@@ -1279,20 +1285,19 @@ class DatabaseService implements DatabaseServiceInterface {
         year: currentYear,
         monthlyIncome: periodIncome,
         categories: newCategories,
-        periodStartDate: DateTime(currentYear, currentMonth, x),
+        periodStartDate: now, // Manual cut: period starts NOW
       );
       await insertDistribution(currentDist);
     } else {
-      // Update existing distribution with correct period income
+      // Update existing distribution: new income, new period start = NOW
       currentDist = currentDist.copyWith(
         monthlyIncome: periodIncome,
-        periodStartDate: DateTime(currentYear, currentMonth, x),
+        periodStartDate: now, // Manual cut: period starts NOW
       );
       await insertDistribution(currentDist);
     }
 
     // Calculate redistribution from last redistributed period to now
-    // This is similar to autoRedistributeIfNeeded but for a custom period
     final lastCategories = List<DistributionCategory>.from(lastRedistributedDist.categories);
     final Map<String, double> redistributionByTarget = {};
     final List<int> appliedIndices = [];
