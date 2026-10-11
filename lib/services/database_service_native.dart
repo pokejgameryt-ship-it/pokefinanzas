@@ -13,6 +13,7 @@ import '../models/redistribution_preset.dart';
 import '../models/category_model.dart';
 import 'firebase_service.dart';
 import 'notification_service.dart';
+import 'redistribution_notifier.dart';
 import 'payment_reminder_service.dart';
 import 'database_service_stub.dart';
 
@@ -659,6 +660,15 @@ class DatabaseService implements DatabaseServiceInterface {
   }
 
   @override
+  Future<bool> getAutoRedistributionEnabled() async => _autoRedistributionEnabled;
+
+  @override
+  Future<void> setAutoRedistributionEnabled(bool enabled) async {
+    _autoRedistributionEnabled = enabled;
+    await FirebaseService.saveAutoRedistributionEnabled(enabled);
+  }
+
+  @override
   Future<void> insertRedistributionConfig(String categoryName, RedistributionConfig config) async {
     _redistributionConfigs[categoryName] = config;
     await FirebaseService.saveRedistributionConfig(categoryName, config);
@@ -697,6 +707,7 @@ class DatabaseService implements DatabaseServiceInterface {
   // === REDISTRIBUTION ===
   int _globalRedistributionDay = 1;
   bool _redistributionEnabled = true;
+  bool _autoRedistributionEnabled = true; // When false, only manual recalculation triggers redistribution
   final Map<String, RedistributionConfig> _redistributionConfigs = {};
   final List<RedistributionPreset> _redistributionPresets = [];
   final List<CategoryModel> _categories = [];
@@ -936,6 +947,7 @@ class DatabaseService implements DatabaseServiceInterface {
     try {
       _globalRedistributionDay = await FirebaseService.loadGlobalRedistributionDay();
       _redistributionEnabled = await FirebaseService.loadRedistributionEnabled();
+      _autoRedistributionEnabled = await FirebaseService.loadAutoRedistributionEnabled();
       _redistributionConfigs.clear();
       _redistributionConfigs.addAll(await FirebaseService.loadRedistributionConfigs());
       _redistributionPresets.clear();
@@ -1014,6 +1026,9 @@ class DatabaseService implements DatabaseServiceInterface {
   }
 
   Future<void> autoRedistributeIfNeeded() async {
+    // If auto redistribution is disabled, only manual recalculation runs
+    if (!_autoRedistributionEnabled) return;
+
     final now = DateTime.now();
     final today = now.day;
     final currentMonth = now.month;
@@ -1158,6 +1173,190 @@ class DatabaseService implements DatabaseServiceInterface {
       await insertDistribution(updatedCurrentDist);
       await updateDistribution(updatedPrevDist);
     }
+  }
+
+  @override
+  Future<void> manualRecalculate() async {
+    final now = DateTime.now();
+    final today = now.day;
+    final currentMonth = now.month;
+    final currentYear = now.year;
+    final x = _globalRedistributionDay;
+
+    // Find the last period that had redistribution applied
+    // Start from current month and go backwards
+    int searchMonth = currentMonth;
+    int searchYear = currentYear;
+    SavingsDistribution? lastRedistributedDist;
+    int lastRedistributedMonth = 0;
+    int lastRedistributedYear = 0;
+
+    for (int i = 0; i < 12; i++) {
+      final dist = await getDistribution(searchMonth, searchYear);
+      if (dist != null) {
+        // Check if this distribution has redistribution applied
+        bool hasRedistribution = dist.categories.any((c) => c.totalRedistributionReceived > 0);
+        if (hasRedistribution) {
+          lastRedistributedDist = dist;
+          lastRedistributedMonth = searchMonth;
+          lastRedistributedYear = searchYear;
+          break;
+        }
+      }
+      // Go to previous month
+      searchMonth--;
+      if (searchMonth == 0) {
+        searchMonth = 12;
+        searchYear--;
+      }
+    }
+
+    // If no redistributed period found, use the most recent period with a periodStartDate
+    if (lastRedistributedDist == null) {
+      searchMonth = currentMonth;
+      searchYear = currentYear;
+      for (int i = 0; i < 12; i++) {
+        final dist = await getDistribution(searchMonth, searchYear);
+        if (dist != null && dist.periodStartDate != null) {
+          lastRedistributedDist = dist;
+          lastRedistributedMonth = searchMonth;
+          lastRedistributedYear = searchYear;
+          break;
+        }
+        searchMonth--;
+        if (searchMonth == 0) {
+          searchMonth = 12;
+          searchYear--;
+        }
+      }
+    }
+
+    if (lastRedistributedDist == null) {
+      // No previous distribution found, just run normal redistribution
+      await autoRedistributeIfNeeded();
+      return;
+    }
+
+    // Calculate income from end of last redistributed period to now
+    // Last period ended at day x-1 of next month
+    final lastPeriodEnd = DateTime(
+      lastRedistributedYear,
+      lastRedistributedMonth + 1,
+      x - 1,
+    );
+
+    // If last period end is in the future (shouldn't happen), clamp to now
+    final incomeStart = lastPeriodEnd.isAfter(now) ? now : lastPeriodEnd;
+    final periodIncome = await getIncomesByDateRange(incomeStart, now);
+
+    // Get current period distribution or create it
+    var currentDist = await getDistribution(currentMonth, currentYear);
+    if (currentDist == null) {
+      List<DistributionCategory> newCategories;
+      if (lastRedistributedDist != null) {
+        newCategories = lastRedistributedDist.userCategories.map((cat) => DistributionCategory(
+              name: cat.name,
+              fixedAmount: cat.fixedAmount,
+              percentage: cat.percentage,
+              isFixed: cat.isFixed,
+              spentAmount: 0,
+              isAutomatic: false,
+              isEnabled: cat.isEnabled,
+              redistributionPercentages: cat.redistributionPercentages,
+            )).toList();
+      } else {
+        newCategories = [];
+      }
+      newCategories.add(DistributionCategory(
+        name: 'Ahorro',
+        isFixed: true,
+        isAutomatic: true,
+      ));
+
+      currentDist = SavingsDistribution(
+        id: '$currentYear-$currentMonth',
+        month: currentMonth,
+        year: currentYear,
+        monthlyIncome: periodIncome,
+        categories: newCategories,
+        periodStartDate: DateTime(currentYear, currentMonth, x),
+      );
+      await insertDistribution(currentDist);
+    } else {
+      // Update existing distribution with correct period income
+      currentDist = currentDist.copyWith(
+        monthlyIncome: periodIncome,
+        periodStartDate: DateTime(currentYear, currentMonth, x),
+      );
+      await insertDistribution(currentDist);
+    }
+
+    // Calculate redistribution from last redistributed period to now
+    // This is similar to autoRedistributeIfNeeded but for a custom period
+    final lastCategories = List<DistributionCategory>.from(lastRedistributedDist.categories);
+    final Map<String, double> redistributionByTarget = {};
+    final List<int> appliedIndices = [];
+
+    for (int pi = 0; pi < lastCategories.length; pi++) {
+      final cat = lastCategories[pi];
+      if (cat.redistributionApplied) continue;
+      if (!cat.isEnabled && !cat.isAutomatic) continue;
+
+      final unspent = lastRedistributedDist.getCategoryUnspentBase(cat);
+      if (unspent <= 0) continue;
+
+      final config = _redistributionConfigs[cat.name];
+
+      if (_redistributionEnabled &&
+          config != null &&
+          config.redistributionPercentages.isNotEmpty) {
+        for (final entry in config.redistributionPercentages.entries) {
+          final amount = unspent * entry.value / 100;
+          redistributionByTarget[entry.key] =
+              (redistributionByTarget[entry.key] ?? 0) + amount;
+        }
+      } else if (_redistributionEnabled &&
+          cat.redistributionPercentages.isNotEmpty &&
+          cat.redistributionPercentages.length > 1) {
+        for (final entry in cat.redistributionPercentages.entries) {
+          final amount = unspent * entry.value / 100;
+          redistributionByTarget[entry.key] =
+              (redistributionByTarget[entry.key] ?? 0) + amount;
+        }
+      } else {
+        // Default: 100% carry-over to same category
+        redistributionByTarget[cat.name] =
+            (redistributionByTarget[cat.name] ?? 0) + unspent;
+      }
+
+      appliedIndices.add(pi);
+    }
+
+    // Apply redistribution to current period
+    final currentCategories = List<DistributionCategory>.from(currentDist.categories);
+    for (final entry in redistributionByTarget.entries) {
+      final idx = currentCategories.indexWhere((c) => c.name == entry.key);
+      if (idx >= 0) {
+        final old = currentCategories[idx];
+        currentCategories[idx] = old.copyWith(
+          totalRedistributionReceived: old.totalRedistributionReceived + entry.value,
+        );
+      }
+    }
+
+    // Mark previous period as redistributed
+    for (final pi in appliedIndices) {
+      lastCategories[pi] = lastCategories[pi].copyWith(redistributionApplied: true);
+    }
+
+    final updatedPrevDist = lastRedistributedDist.copyWith(categories: lastCategories);
+    final updatedCurrentDist = currentDist.copyWith(categories: currentCategories);
+
+    await insertDistribution(updatedCurrentDist);
+    await updateDistribution(updatedPrevDist);
+
+    // Notify UI
+    RedistributionNotifier.instance.notify();
   }
 
   @override

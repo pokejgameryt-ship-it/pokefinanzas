@@ -429,6 +429,26 @@ class FirebaseService {
     return true;
   }
 
+  static Future<void> saveAutoRedistributionEnabled(bool enabled) async {
+    if (_userId == null) return;
+    try {
+      final url = Uri.parse('$_baseUrl/${_userPath()}/redistributionSettings/autoRedistributionEnabled.json?auth=$_token');
+      await http.put(url, body: jsonEncode(enabled)).timeout(_timeout);
+    } catch (_) {}
+  }
+
+  static Future<bool> loadAutoRedistributionEnabled() async {
+    if (_userId == null) return true;
+    try {
+      final url = Uri.parse('$_baseUrl/${_userPath()}/redistributionSettings/autoRedistributionEnabled.json?auth=$_token');
+      final response = await http.get(url).timeout(_timeout);
+      if (response.statusCode == 200 && response.body != 'null') {
+        return jsonDecode(response.body) as bool;
+      }
+    } catch (_) {}
+    return true;
+  }
+
   static Future<void> saveRedistributionConfig(String categoryName, RedistributionConfig config) async {
     if (_userId == null) return;
     try {

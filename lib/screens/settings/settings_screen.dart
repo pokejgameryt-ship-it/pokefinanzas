@@ -28,6 +28,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _buildNumber = '1';
   String _currencyCode = 'EUR';
   String _lastSyncTime = 'Nunca';
+  bool _autoRedistributionEnabled = true;
 
   @override
   void initState() {
@@ -35,6 +36,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _loadPackageInfo();
     _loadCurrency();
     _loadCacheInfo();
+    _loadAutoRedistributionSetting();
+  }
+
+  Future<void> _loadAutoRedistributionSetting() async {
+    final enabled = await DatabaseService.instance.getAutoRedistributionEnabled();
+    if (mounted) setState(() => _autoRedistributionEnabled = enabled);
   }
 
   Future<void> _loadPackageInfo() async {
@@ -458,6 +465,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
             subtitle: const Text('Día del mes en que empieza un nuevo periodo'),
             trailing: const Icon(Icons.chevron_right),
             onTap: _showRedistributionDayDialog,
+          ),
+          SwitchListTile(
+            secondary: const Icon(Icons.autorenew, color: Colors.blue),
+            title: const Text('Redistribución automática'),
+            subtitle: const Text('Recalcular y redistribuir al abrir la app (si desactivado, usa el botón manual)'),
+            value: _autoRedistributionEnabled,
+            onChanged: (value) async {
+              await DatabaseService.instance.setAutoRedistributionEnabled(value);
+              setState(() => _autoRedistributionEnabled = value);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text(value ? 'Redistribución automática activada' : 'Redistribución automática desactivada')),
+                );
+              }
+            },
           ),
           ListTile(
             leading: const Icon(Icons.restart_alt, color: Colors.blue),

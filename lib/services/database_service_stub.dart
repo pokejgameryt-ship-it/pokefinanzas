@@ -108,6 +108,9 @@ abstract class DatabaseServiceInterface {
   Future<void> setGlobalRedistributionDay(int day);
   Future<bool> getRedistributionEnabled();
   Future<void> setRedistributionEnabled(bool enabled);
+  Future<bool> getAutoRedistributionEnabled();
+  Future<void> setAutoRedistributionEnabled(bool enabled);
+  Future<void> manualRecalculate(); // Recalculate from last redistribution to now
   Future<void> insertRedistributionConfig(String categoryName, RedistributionConfig config);
   Future<Map<String, RedistributionConfig>> getRedistributionConfigs();
   Future<void> deleteRedistributionConfig(String categoryName);

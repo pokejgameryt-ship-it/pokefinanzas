@@ -453,6 +453,39 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
     );
   }
 
+  Future<void> _showManualRecalculateConfirmation() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Recalcular manualmente'),
+        content: const Text(
+          'Esto recalculará la redistribución desde el último periodo redistribuido hasta ahora, '
+          'usando los ingresos reales de ese tramo.\n\n'
+          '¿Continuar?',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Recalcular')),
+        ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.showSnackBar(const SnackBar(content: Text('Recalculando...')));
+      try {
+        await DatabaseService.instance.manualRecalculate();
+        await _loadData();
+        if (mounted) {
+          messenger.showSnackBar(const SnackBar(content: Text('Recalculado correctamente')));
+        }
+      } catch (e) {
+        if (mounted) {
+          messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+        }
+      }
+    }
+  }
+
   void _showCategoryRedistributionDialog(int categoryIndex) {
     final dist = _currentDistribution!;
     final cat = dist.categories[categoryIndex];
@@ -1348,6 +1381,13 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
       appBar: AppBar(
         title: const Text('Distribución Mensual'),
         actions: [
+          IconButton(
+            tooltip: 'Recalcular manualmente (última redistribución → ahora)',
+            onPressed: () async {
+              await _showManualRecalculateConfirmation();
+            },
+            icon: const Icon(Icons.refresh),
+          ),
           IconButton(
             onPressed: () async {
               final picked = await showDatePicker(
