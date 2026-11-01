@@ -95,9 +95,16 @@ class _MovimientosScreenState extends State<MovimientosScreen> {
       }
 
       // Load distribution categories for filter
+      // If before redistribution day, the active period is the previous month's distribution
       SavingsDistribution? dist;
       try {
-        dist = await _db.getDistribution(now.month, now.year);
+        final now2 = DateTime.now();
+        final x = await _db.getGlobalRedistributionDay();
+        final targetMonth = now2.day < x
+            ? (now2.month == 1 ? 12 : now2.month - 1)
+            : now2.month;
+        final targetYear = now2.day < x && now2.month == 1 ? now2.year - 1 : now2.year;
+        dist = await _db.getDistribution(targetMonth, targetYear);
       } catch (_) {}
 
       // Load subcategories
