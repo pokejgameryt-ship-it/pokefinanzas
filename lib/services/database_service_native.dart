@@ -1205,7 +1205,12 @@ class DatabaseService implements DatabaseServiceInterface {
 
     // Create or update current period distribution
     var currentDist = await getDistribution(currentMonth, currentYear);
+    final isManualPeriod = currentDist != null &&
+        currentDist.periodStartDate != null &&
+        currentDist.periodStartDate!.day != x;
+
     if (currentDist == null) {
+      // No distribution exists: create automatic one with period income
       List<DistributionCategory> newCategories;
       if (prevDist != null) {
         newCategories = prevDist.userCategories.map((cat) => DistributionCategory(
@@ -1236,13 +1241,25 @@ class DatabaseService implements DatabaseServiceInterface {
         periodStartDate: DateTime(currentYear, currentMonth, x),
       );
       await insertDistribution(currentDist);
+    } else if (isManualPeriod) {
+      // Manual period (created by resetAndRecalculateFromNow): DON'T overwrite monthlyIncome
+      // Just ensure periodStartDate has correct year/month (keep the day as-is)
+      if (currentDist.periodStartDate == null ||
+          currentDist.periodStartDate!.year != currentYear ||
+          currentDist.periodStartDate!.month != currentMonth) {
+        currentDist = currentDist.copyWith(
+          periodStartDate: DateTime(currentYear, currentMonth, currentDist.periodStartDate!.day),
+        );
+        await insertDistribution(currentDist);
+      }
+      // Recalculate spent amounts for the manual period
+      await recalculateDistributionSpent();
     } else if (currentDist.periodStartDate == null ||
         currentDist.periodStartDate!.year != currentYear ||
         currentDist.periodStartDate!.month != currentMonth ||
         currentDist.periodStartDate!.day != x ||
         currentDist.monthlyIncome != prevPeriodIncome) {
-      // Fix periodStartDate AND monthlyIncome if wrong (e.g. created by old code with day 1,
-      // or income was set to currentBalance instead of actual period income)
+      // Automatic period (periodStartDate == day x): fix periodStartDate AND monthlyIncome
       currentDist = currentDist.copyWith(
         periodStartDate: DateTime(currentYear, currentMonth, x),
         monthlyIncome: prevPeriodIncome,
