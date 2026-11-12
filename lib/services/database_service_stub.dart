@@ -45,6 +45,7 @@ abstract class DatabaseServiceInterface {
   // Distributions
   Future<void> insertDistribution(SavingsDistribution distribution);
   Future<void> resetAllDistributions();
+  Future<void> resetAndRecalculateFromNow(); // Full reset + recalc from current money, period starts now
   Future<SavingsDistribution?> getDistribution(int month, int year);
   Future<void> updateDistribution(SavingsDistribution distribution);
   Future<List<DistributionCategory>> getDistributionCategories(int month, int year);

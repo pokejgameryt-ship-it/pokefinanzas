@@ -273,6 +273,78 @@ class DatabaseService implements DatabaseServiceInterface {
   }
 
   @override
+  Future<void> resetAndRecalculateFromNow() async {
+    // 1. Get current categories from the latest distribution (to preserve settings)
+    SavingsDistribution? lastDist;
+    for (int i = 0; i < 12; i++) {
+      final m = DateTime.now().month - i;
+      final y = DateTime.now().year + (m <= 0 ? -1 : 0);
+      final adjMonth = m <= 0 ? m + 12 : m;
+      final d = await getDistribution(adjMonth, y);
+      if (d != null) {
+        lastDist = d;
+        break;
+      }
+    }
+
+    // 2. Calculate current money: total income - total expenses (excluding Ahorro, Cajero, transfers)
+    final totalIncome = await getTotalIncomeAll();
+    final allExpenses = await getAllExpenses();
+    double totalExpenses = 0;
+    for (final e in allExpenses) {
+      if (e.isTransfer) continue;
+      if (e.category == 'Cajero') continue;
+      if (e.isAhorroTransfer) continue;
+      totalExpenses += e.amount;
+    }
+    final currentBalance = totalIncome - totalExpenses;
+
+    // 3. Delete all distributions
+    await resetAllDistributions();
+
+    // 4. Create new distribution for current month starting NOW
+    final now = DateTime.now();
+    final currentMonth = now.month;
+    final currentYear = now.year;
+
+    List<DistributionCategory> newCategories;
+    if (lastDist != null) {
+      // Preserve category settings from last distribution
+      newCategories = lastDist.userCategories.map((cat) => DistributionCategory(
+            name: cat.name,
+            fixedAmount: cat.fixedAmount,
+            percentage: cat.percentage,
+            isFixed: cat.isFixed,
+            spentAmount: 0,
+            isAutomatic: false,
+            isEnabled: cat.isEnabled,
+            redistributionPercentages: cat.redistributionPercentages,
+          )).toList();
+    } else {
+      newCategories = [];
+    }
+    // Always add Ahorro category
+    newCategories.add(DistributionCategory(
+      name: 'Ahorro',
+      isFixed: true,
+      isAutomatic: true,
+    ));
+
+    final newDist = SavingsDistribution(
+      id: '$currentYear-$currentMonth',
+      month: currentMonth,
+      year: currentYear,
+      monthlyIncome: currentBalance,
+      categories: newCategories,
+      periodStartDate: now, // Period starts NOW
+    );
+    await insertDistribution(newDist);
+
+    // Notify UI
+    RedistributionNotifier.instance.notify();
+  }
+
+  @override
   Future<SavingsDistribution?> getDistribution(int month, int year) async {
     try {
       return _distributions.firstWhere((d) => d.month == month && d.year == year);

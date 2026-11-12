@@ -483,32 +483,44 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           ListTile(
             leading: const Icon(Icons.restart_alt, color: Colors.blue),
-            title: const Text('Resetear distribución'),
-            subtitle: const Text('Borrar todas las distribuciones y recalcular desde cero'),
+            title: const Text('Resetear y recalcular desde AHORA'),
+            subtitle: const Text('Borra periodos, usa dinero actual (sin Ahorro) como ingreso, nuevo periodo empieza ahora'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: const Text('Resetear distribución'),
-                  content: const Text('Esto borrará todas las distribuciones existentes y se recalcularán con el dinero actual. ¿Continuar?'),
+                  title: const Text('Resetear y recalcular desde AHORA'),
+                  content: const Text(
+                    'Esto borrará TODOS los periodos y creará uno nuevo:\n'
+                    '• Ingreso = dinero actual (ingresos - gastos, sin Ahorro)\n'
+                    '• Periodo empieza en este instante\n'
+                    '• Se conservan tus categorías y configuraciones\n\n'
+                    '¿Continuar?',
+                  ),
                   actions: [
                     TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
                     FilledButton(
                       onPressed: () => Navigator.pop(ctx, true),
-                      style: FilledButton.styleFrom(backgroundColor: Colors.blue),
-                      child: const Text('Resetear'),
+                      style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+                      child: const Text('Resetear y recalcular'),
                     ),
                   ],
                 ),
               );
               if (confirmed == true && mounted) {
-                await DatabaseService.instance.resetAllDistributions();
-                RedistributionNotifier.instance.notify();
-                if (mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Distribuciones reseteadas. Se recalcularán al abrir Distribución.')),
-                  );
+                final messenger = ScaffoldMessenger.of(context);
+                messenger.showSnackBar(const SnackBar(content: Text('Reseteando y recalculando...')));
+                try {
+                  await DatabaseService.instance.resetAndRecalculateFromNow();
+                  await _loadAutoRedistributionSetting();
+                  if (mounted) {
+                    messenger.showSnackBar(const SnackBar(content: Text('Recalculado desde ahora correctamente')));
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    messenger.showSnackBar(SnackBar(content: Text('Error: $e')));
+                  }
                 }
               }
             },
