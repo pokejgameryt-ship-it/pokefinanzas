@@ -355,6 +355,20 @@ class DatabaseService implements DatabaseServiceInterface {
     );
     await insertDistribution(newDist);
 
+    // Verify it's actually saved in Firebase by loading it back
+    try {
+      final verify = await FirebaseService.loadDistributions();
+      final saved = verify.firstWhere(
+        (d) => d.month == currentMonth && d.year == currentYear,
+        orElse: () => throw Exception('Distribution not found in Firebase after save'),
+      );
+      if ((saved.monthlyIncome - currentBalance).abs() > 0.01) {
+        throw Exception('Saved income mismatch: expected $currentBalance, got ${saved.monthlyIncome}');
+      }
+    } catch (e) {
+      throw Exception('Failed to verify Firebase save: $e');
+    }
+
     // Notify UI
     RedistributionNotifier.instance.notify();
   }

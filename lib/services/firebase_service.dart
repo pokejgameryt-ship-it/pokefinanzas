@@ -138,12 +138,13 @@ class FirebaseService {
 
   static Future<void> saveDistribution(SavingsDistribution dist) async {
     if (_userId == null) return;
-    try {
-      final url = Uri.parse('$_baseUrl/${_userPath()}/distributions/${dist.id}.json?auth=$_token');
-      final map = dist.toMap();
-      map['categories'] = dist.categories.map((c) => c.toMap()).toList();
-      await http.put(url, body: jsonEncode(map)).timeout(_timeout);
-    } catch (_) {}
+    final url = Uri.parse('$_baseUrl/${_userPath()}/distributions/${dist.id}.json?auth=$_token');
+    final map = dist.toMap();
+    map['categories'] = dist.categories.map((c) => c.toMap()).toList();
+    final response = await http.put(url, body: jsonEncode(map)).timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to save distribution: ${response.statusCode} ${response.body}');
+    }
   }
 
   static Future<void> deleteDistribution(String distId) async {
