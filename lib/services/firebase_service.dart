@@ -156,10 +156,11 @@ class FirebaseService {
 
   static Future<void> deleteAllDistributions() async {
     if (_userId == null) return;
-    try {
-      final url = Uri.parse('$_baseUrl/${_userPath()}/distributions.json?auth=$_token');
-      await http.delete(url).timeout(_timeout);
-    } catch (_) {}
+    final url = Uri.parse('$_baseUrl/${_userPath()}/distributions.json?auth=$_token');
+    final response = await http.delete(url).timeout(_timeout);
+    if (response.statusCode != 200) {
+      throw Exception('Failed to delete distributions: ${response.statusCode} ${response.body}');
+    }
   }
 
   static Future<bool> saveNotification(AppNotification notif) async {

@@ -299,10 +299,25 @@ class DatabaseService implements DatabaseServiceInterface {
     }
     final currentBalance = totalIncome - totalExpenses;
 
-    // 3. Delete all distributions
+    // 3. Delete all distributions from local AND Firebase
     await resetAllDistributions();
 
-    // 4. Create new distribution for current month starting NOW
+    // 4. Verify Firebase is actually empty (guard against silent delete failures)
+    try {
+      final remaining = await FirebaseService.loadDistributions();
+      if (remaining.isNotEmpty) {
+        // Force delete again if any remain
+        await FirebaseService.deleteAllDistributions();
+        final checkAgain = await FirebaseService.loadDistributions();
+        if (checkAgain.isNotEmpty) {
+          throw Exception('No se pudieron borrar las distribuciones antiguas de Firebase');
+        }
+      }
+    } catch (e) {
+      throw Exception('Error verificando limpieza de Firebase: $e');
+    }
+
+    // 5. Create new distribution for current month starting NOW
     final now = DateTime.now();
     final currentMonth = now.month;
     final currentYear = now.year;
