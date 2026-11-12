@@ -132,8 +132,14 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         dist = null;
       }
 
+      final now = DateTime.now();
+      final isCurrentMonth = month == now.month && year == now.year;
+      final isRedistributionDayOrAfter = now.day >= x;
+
       // Only create distribution if it doesn't exist yet
-      if (dist == null) {
+      // BUT: on redistribution day (or after) for current month, don't create with currentBalance
+      // because autoRedistributeIfNeeded should create it with correct period income
+      if (dist == null && !(isCurrentMonth && isRedistributionDayOrAfter)) {
         final totalIncome = await _db.getTotalIncomeAll();
         final allExpenses = await _db.getAllExpenses();
         double totalExpenses = 0;
@@ -161,6 +167,43 @@ class _DistributionScreenState extends State<DistributionScreen> with WidgetsBin
         );
         await _db.insertDistribution(dist);
       }
+
+      // If current month on/after redistribution day and no distribution yet, trigger redistribution
+      if (dist == null && isCurrentMonth && isRedistributionDayOrAfter) {
+        await _db.autoRedistributeIfNeeded();
+        // Try to get it again after redistribution
+        try {
+          dist = await _db.getDistribution(month, year);
+        } catch (_) {
+          dist = null;
+        }
+        // If still null, create minimal one (shouldn't happen)
+        if (dist == null) {
+          dist = SavingsDistribution(
+            id: const Uuid().v4(),
+            month: month,
+            year: year,
+            monthlyIncome: 0,
+            categories: [
+              DistributionCategory(
+                name: 'Ahorro',
+                isFixed: true,
+                isAutomatic: true,
+              ),
+            ],
+            periodStartDate: DateTime(year, month, x),
+          );
+          await _db.insertDistribution(dist);
+        }
+      }
+
+    // dist should never be null here (created in all branches above)
+    if (dist == null) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      return;
+    }
 
       // Ensure Ahorro category exists
       if (!dist.categories.any((c) => c.isAutomatic)) {

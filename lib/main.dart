@@ -10,6 +10,7 @@ import 'screens/main_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'services/database_service.dart';
 import 'services/auth_service.dart';
+import 'services/redistribution_notifier.dart';
 import 'services/update_service.dart';
 import 'utils/formatters.dart';
 import 'utils/theme.dart';
@@ -38,15 +39,55 @@ class FinanzasApp extends StatefulWidget {
   State<FinanzasApp> createState() => _FinanzasAppState();
 }
 
-class _FinanzasAppState extends State<FinanzasApp> {
+class _FinanzasAppState extends State<FinanzasApp> with WidgetsBindingObserver {
   ThemeMode _themeMode = ThemeMode.light;
   bool _onboardingSeen = false;
   bool _prefsLoaded = false;
+  DateTime? _lastRedistributionCheck;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadPrefs();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkAndRunRedistribution();
+    }
+  }
+
+  Future<void> _checkAndRunRedistribution() async {
+    final now = DateTime.now();
+    // Avoid running multiple times per day
+    if (_lastRedistributionCheck != null &&
+        _lastRedistributionCheck!.year == now.year &&
+        _lastRedistributionCheck!.month == now.month &&
+        _lastRedistributionCheck!.day == now.day) {
+      return;
+    }
+    _lastRedistributionCheck = now;
+
+    try {
+      // Only run if auto redistribution is enabled
+      final autoEnabled = await DatabaseService.instance.getAutoRedistributionEnabled();
+      if (!autoEnabled) return;
+
+      final x = await DatabaseService.instance.getGlobalRedistributionDay();
+      if (now.day >= x) {
+        await DatabaseService.instance.autoRedistributeIfNeeded();
+        // Notify distribution screen to refresh
+        RedistributionNotifier.instance.notify();
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadPrefs() async {
